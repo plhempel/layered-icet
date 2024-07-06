@@ -222,6 +222,7 @@ ICET_EXPORT const char *icetGetStrategyName(void);
 #define ICET_SINGLE_IMAGE_STRATEGY_RADIXK       (IceTEnum)0x7004
 #define ICET_SINGLE_IMAGE_STRATEGY_RADIXKR      (IceTEnum)0x7005
 #define ICET_SINGLE_IMAGE_STRATEGY_BSWAP_FOLDING (IceTEnum)0x7006
+#define ICET_SINGLE_IMAGE_STRATEGY_GPU_BSWAP    (IceTEnum)0x7007
 
 ICET_EXPORT void icetSingleImageStrategy(IceTEnum strategy);
 
