@@ -10,5 +10,3 @@
 ADD_CUSTOM_TARGET(strategies_target ALL
   DEPENDS IceTCore
   )
-
-ADD_SUBDIRECTORY(gpu)

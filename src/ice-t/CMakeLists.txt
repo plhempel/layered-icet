@@ -30,8 +30,6 @@ SET(ICET_SRCS
   ../strategies/radixkr.c
   ../strategies/tree.c
   ../strategies/automatic.c
-
-  ../strategies/gpu/bswap.c
   )
 
 SET(ICET_HEADERS

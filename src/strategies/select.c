@@ -58,12 +58,6 @@ extern void icetRadixkrCompose(const IceTInt *compose_group,
                                IceTSparseImage input_image,
                                IceTSparseImage *result_image,
                                IceTSizeType *piece_offset);
-void icetGpuBswapCompose(const IceTInt *compose_group,
-                         IceTInt group_size,
-                         IceTInt image_dest,
-                         IceTSparseImage input_image,
-                         IceTSparseImage *result_image,
-                         IceTSizeType *piece_offset);
 
 /*==================================================================*/
 
@@ -153,7 +147,6 @@ IceTBoolean icetSingleImageStrategyValid(IceTEnum strategy)
       case ICET_SINGLE_IMAGE_STRATEGY_RADIXK:
       case ICET_SINGLE_IMAGE_STRATEGY_RADIXKR:
       case ICET_SINGLE_IMAGE_STRATEGY_BSWAP_FOLDING:
-      case ICET_SINGLE_IMAGE_STRATEGY_GPU_BSWAP:
           return ICET_TRUE;
       default:
           return ICET_FALSE;
@@ -169,7 +162,6 @@ const char *icetSingleImageStrategyNameFromEnum(IceTEnum strategy)
       case ICET_SINGLE_IMAGE_STRATEGY_RADIXK:           return "Radix-k";
       case ICET_SINGLE_IMAGE_STRATEGY_RADIXKR:          return "Radix-kr";
       case ICET_SINGLE_IMAGE_STRATEGY_BSWAP_FOLDING:    return "Folded Binary Swap";
-      case ICET_SINGLE_IMAGE_STRATEGY_GPU_BSWAP:        return "Binary Swap on GPU";
       default:
           icetRaiseError(ICET_INVALID_ENUM,
                          "Invalid single image strategy %d.", strategy);
@@ -236,14 +228,6 @@ void icetInvokeSingleImageStrategy(IceTEnum strategy,
                                 input_image,
                                 result_image,
                                 piece_offset);
-        break;
-    case ICET_SINGLE_IMAGE_STRATEGY_GPU_BSWAP:
-        icetGpuBswapCompose(compose_group,
-                            group_size,
-                            image_dest,
-                            input_image,
-                            result_image,
-                            piece_offset);
         break;
       default:
           icetRaiseError(ICET_INVALID_ENUM,
