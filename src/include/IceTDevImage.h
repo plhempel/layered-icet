@@ -47,6 +47,18 @@ ICET_EXPORT IceTImage icetImagePointerAssignBuffer(IceTVoid *buffer,
                                                    IceTSizeType height,
                                                    const IceTVoid *color_buf,
                                                    const IceTVoid *depth_buf);
+ICET_EXPORT IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
+                                                      IceTSizeType width,
+                                                      IceTSizeType height,
+                                                      IceTSizeType num_layers,
+                                                      const IceTVoid *fragment_buffer);
+ICET_EXPORT IceTSizeType icetLayeredImagePointerBufferSize(void);
+ICET_EXPORT IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
+                                                          IceTSizeType width,
+                                                          IceTSizeType height,
+                                                          IceTSizeType num_layers,
+                                                          const IceTVoid *fragment_buffer);
+ICET_EXPORT IceTBoolean icetImageIsLayered(const IceTImage image);
 ICET_EXPORT void icetImageAdjustForOutput(IceTImage image);
 ICET_EXPORT void icetImageAdjustForInput(IceTImage image);
 ICET_EXPORT void icetImageSetDimensions(IceTImage image,
@@ -62,6 +74,7 @@ ICET_EXPORT IceTVoid *icetImageGetDepthVoid(IceTImage image,
 ICET_EXPORT const IceTVoid *icetImageGetDepthConstVoid(
                                                       const IceTImage image,
                                                       IceTSizeType *pixel_size);
+ICET_EXPORT const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image);
 ICET_EXPORT IceTBoolean icetImageEqual(const IceTImage image1,
                                        const IceTImage image2);
 ICET_EXPORT void icetImageCopyPixels(const IceTImage in_image,

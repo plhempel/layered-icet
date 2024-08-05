@@ -23,6 +23,7 @@
 #define ICET_IMAGE_MAGIC_NUM            (IceTEnum)0x004D5000
 #define ICET_IMAGE_POINTERS_MAGIC_NUM   (IceTEnum)0x004D5100
 #define ICET_SPARSE_IMAGE_MAGIC_NUM     (IceTEnum)0x004D6000
+#define ICET_IMAGE_FLAG_LAYERED         (IceTEnum)0x00000001
 
 #define ICET_IMAGE_MAGIC_NUM_INDEX              0
 #define ICET_IMAGE_COLOR_FORMAT_INDEX           1
@@ -37,6 +38,16 @@
 #define ICET_IMAGE_DATA(image) \
     ((IceTVoid *)&(ICET_IMAGE_HEADER(image)[ICET_IMAGE_DATA_START_INDEX]))
 
+typedef struct IceTLayeredImageBufferData {
+    IceTSizeType num_layers;
+    IceTUByte fragments[];
+} IceTLayeredImageBufferData;
+
+typedef struct IceTLayeredImagePointerData {
+    IceTSizeType num_layers;
+    const IceTVoid *fragments;
+} IceTLayeredImagePointerData;
+
 typedef IceTUnsignedInt32 IceTRunLengthType;
 
 #define INACTIVE_RUN_LENGTH(rl) (((IceTRunLengthType *)(rl))[0])
@@ -48,7 +59,8 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
 {
     if (!icetImageIsNull(image)) {
         IceTEnum magic_num =
-                ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+                ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+                & ~ICET_IMAGE_FLAG_LAYERED;
         if (   (magic_num != ICET_IMAGE_MAGIC_NUM)
             && (magic_num != ICET_IMAGE_POINTERS_MAGIC_NUM) ) {
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
@@ -60,7 +72,8 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
 static void ICET_TEST_SPARSE_IMAGE_HEADER(IceTSparseImage image)
 {
     if (!icetSparseImageIsNull(image)) {
-        if (    ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+        if (    (ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+                 & ~ICET_IMAGE_FLAG_LAYERED)
             != ICET_SPARSE_IMAGE_MAGIC_NUM ) {
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
                            "Detected invalid image header (magic num = 0x%X).",
@@ -309,6 +322,12 @@ IceTSizeType icetImagePointerBufferSize(void)
             + 2*(sizeof(const IceTVoid *)) );
 }
 
+IceTSizeType icetLayeredImagePointerBufferSize(void)
+{
+    return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)
+            + sizeof(IceTLayeredImagePointerData));
+}
+
 IceTSizeType icetSparseImageBufferSize(IceTSizeType width, IceTSizeType height)
 {
     IceTEnum color_format, depth_format;
@@ -384,6 +403,22 @@ IceTImage icetGetStatePointerImage(IceTEnum pname,
 
     return icetImagePointerAssignBuffer(
                 buffer, width, height, color_buffer, depth_buffer);
+}
+
+IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
+                                          IceTSizeType width,
+                                          IceTSizeType height,
+                                          IceTSizeType num_layers,
+                                          const IceTVoid *fragment_buffer)
+{
+    IceTVoid *buffer;
+    IceTSizeType buffer_size;
+
+    buffer_size = icetLayeredImagePointerBufferSize();
+    buffer = icetGetStateBuffer(pname, buffer_size);
+
+    return icetLayeredImagePointerAssignBuffer(
+                buffer, width, height, num_layers, fragment_buffer);
 }
 
 IceTImage icetImageAssignBuffer(IceTVoid *buffer,
@@ -493,6 +528,54 @@ IceTImage icetImagePointerAssignBuffer(IceTVoid *buffer,
     return image;
 }
 
+IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
+                                              IceTSizeType width,
+                                              IceTSizeType height,
+                                              IceTSizeType num_layers,
+                                              const IceTVoid *fragment_buffer)
+{
+    /* Adapted from `icetImagePointerAssignBuffer`. */
+    IceTImage image = icetImageAssignBuffer(buffer, width, height);
+
+    {
+        IceTInt *header = ICET_IMAGE_HEADER(image);
+        /* Mark image as layered. */
+        header[ICET_IMAGE_MAGIC_NUM_INDEX] =
+            ICET_IMAGE_POINTERS_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED;
+        /* It is invalid to use this type of image as a single buffer. */
+        header[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX] = -1;
+    }
+
+    /* Check the depth format. */
+    {
+        switch (icetImageGetDepthFormat(image)) {
+        case ICET_IMAGE_DEPTH_FLOAT:
+            break; /* Format is supported. */
+        case ICET_IMAGE_DEPTH_NONE:
+            icetRaiseError(ICET_INVALID_VALUE,
+                "Layered images must contain depth information.");
+            break;
+        default:
+            break; /* Unreachable. */
+        }
+    }
+
+    /* Check that the assigned data is not NULL. */
+    if (fragment_buffer == NULL) {
+        icetRaiseError(ICET_INVALID_VALUE,
+                       "Layered images must have a fragment buffer.");
+    }
+
+    /* Set data. */
+    {
+        IceTLayeredImagePointerData *data = ICET_IMAGE_DATA(image);
+        data->num_layers = num_layers;
+        data->fragments = fragment_buffer;
+    }
+
+    return image;
+}
+
 IceTImage icetImageNull(void)
 {
     IceTImage image;
@@ -570,6 +653,12 @@ IceTSparseImage icetSparseImageAssignBuffer(IceTVoid *buffer,
     icetClearSparseImage(image);
 
     return image;
+}
+
+IceTBoolean icetImageIsLayered(const IceTImage image)
+{
+    return ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+        & ICET_IMAGE_FLAG_LAYERED;
 }
 
 IceTSparseImage icetSparseImageNull(void)
@@ -781,19 +870,28 @@ static void icetSparseImageSetActualSize(IceTSparseImage image,
 const IceTVoid *icetImageGetColorConstVoid(const IceTImage image,
                                            IceTSizeType *pixel_size)
 {
+    const IceTEnum magic_number =
+        ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+
     if (pixel_size) {
         IceTEnum color_format = icetImageGetColorFormat(image);
         *pixel_size = colorPixelSize(color_format);
     }
 
-    switch (ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]) {
+    switch (magic_number) {
     case ICET_IMAGE_MAGIC_NUM:
         return ICET_IMAGE_DATA(image);
     case ICET_IMAGE_POINTERS_MAGIC_NUM:
         return ((const IceTVoid **)ICET_IMAGE_DATA(image))[0];
     default:
-        icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                       "Detected invalid image header.");
+        if (magic_number & ICET_IMAGE_FLAG_LAYERED) {
+            icetRaiseError(ICET_INVALID_OPERATION,
+                "Layered images do not have a separate color buffer.");
+        }
+        else {
+            icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                           "Detected invalid image header.");
+        }
         return NULL;
     }
 }
@@ -880,6 +978,8 @@ IceTFloat *icetImageGetColorf(IceTImage image)
 const IceTVoid *icetImageGetDepthConstVoid(const IceTImage image,
                                            IceTSizeType *pixel_size)
 {
+    const IceTEnum magic_number =
+        ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
     IceTEnum color_format = icetImageGetColorFormat(image);
 
     if (pixel_size) {
@@ -887,7 +987,7 @@ const IceTVoid *icetImageGetDepthConstVoid(const IceTImage image,
         *pixel_size = depthPixelSize(depth_format);
     }
 
-    switch (ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]) {
+    switch (magic_number) {
     case ICET_IMAGE_MAGIC_NUM:
     {
         IceTSizeType color_format_bytes = (  icetImageGetNumPixels(image)
@@ -902,9 +1002,14 @@ const IceTVoid *icetImageGetDepthConstVoid(const IceTImage image,
     case ICET_IMAGE_POINTERS_MAGIC_NUM:
         return ((const IceTVoid **)ICET_IMAGE_DATA(image))[1];
     default:
-        icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                       "Detected invalid image header (magic_num = 0x%X).",
-                       ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]);
+        if (magic_number & ICET_IMAGE_FLAG_LAYERED) {
+            icetRaiseError(ICET_INVALID_OPERATION,
+                "Layered images do not have a separate depth buffer.");
+        } else {
+            icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                           "Detected invalid image header (magic_num = 0x%X).",
+                           magic_number);
+        }
         return NULL;
     }
 }
@@ -949,6 +1054,78 @@ IceTFloat *icetImageGetDepthf(IceTImage image)
 
     return icetImageGetDepthVoid(image, NULL);
 }
+
+const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image)
+{
+    const IceTEnum magic_number =
+        ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+
+    switch (magic_number) {
+    case ICET_IMAGE_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        return ((IceTLayeredImageBufferData*)ICET_IMAGE_DATA(image))->fragments;
+    case ICET_IMAGE_POINTERS_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        return ((IceTLayeredImagePointerData*)ICET_IMAGE_DATA(image))->fragments;
+    default:
+        icetRaiseError(ICET_INVALID_OPERATION,
+            "Cannot get layered fragments from image of type 0x%X.",
+            magic_number);
+        return NULL;
+    }
+}
+
+#define FRAGMENT_FORMAT(format,                                                 \
+                        color_type,                                             \
+                        color_channels,                                         \
+                        color_format,                                           \
+                        depth_type,                                             \
+                        depth_format)                                           \
+    typedef struct IceTFragment_##format {                                      \
+        color_type color[color_channels];                                       \
+        depth_type depth;                                                       \
+    } IceTFragment_##format;                                                    \
+                                                                                \
+    const IceTFragment_##format *icetLayeredImageGetFragmentsConst_##format(    \
+            const IceTImage image) {                                            \
+        const IceTEnum runtime_color_format = icetImageGetColorFormat(image);   \
+        const IceTEnum runtime_depth_format = icetImageGetDepthFormat(image);   \
+                                                                                \
+        if (runtime_color_format != color_format) {                             \
+            icetRaiseError(ICET_INVALID_OPERATION,                              \
+                "Expected color format " #color_format " (%X), got %X.",        \
+                color_format, runtime_color_format);                            \
+            return NULL;                                                        \
+        }                                                                       \
+                                                                                \
+        if (runtime_depth_format != depth_format) {                             \
+            icetRaiseError(ICET_INVALID_OPERATION,                              \
+                "Expected depth format " #depth_format " (%X), got %X.",        \
+                depth_format, runtime_depth_format);                            \
+            return NULL;                                                        \
+        }                                                                       \
+                                                                                \
+        return icetLayeredImageGetFragmentsConstVoid(image);                    \
+    }
+
+FRAGMENT_FORMAT(RGB32F_D32F,
+                IceTFloat,
+                3,
+                ICET_IMAGE_COLOR_RGB_FLOAT,
+                IceTFloat,
+                ICET_IMAGE_DEPTH_FLOAT);
+FRAGMENT_FORMAT(RGBA32F_D32F,
+                IceTFloat,
+                4,
+                ICET_IMAGE_COLOR_RGBA_FLOAT,
+                IceTFloat,
+                ICET_IMAGE_DEPTH_FLOAT);
+FRAGMENT_FORMAT(RGBA8_D32F,
+                IceTUnsignedInt8,
+                4,
+                ICET_IMAGE_COLOR_RGBA_UBYTE,
+                IceTFloat,
+                ICET_IMAGE_DEPTH_FLOAT);
+
+#undef FRAGMENT_FORMAT
 
 void icetImageCopyColorub(const IceTImage image,
                           IceTUByte *color_buffer,
@@ -1429,7 +1606,7 @@ IceTImage icetImageUnpackageFromReceive(IceTVoid *buffer)
     image.opaque_internals = buffer;
 
   /* Check the image for validity. */
-    magic_number = ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+    magic_number = ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX] & ~ICET_IMAGE_FLAG_LAYERED;
     if (   (magic_number != ICET_IMAGE_MAGIC_NUM)
         && (magic_number != ICET_IMAGE_POINTERS_MAGIC_NUM) ) {
         icetRaiseError(ICET_INVALID_VALUE,

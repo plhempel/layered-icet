@@ -256,6 +256,13 @@ ICET_EXPORT IceTImage icetCompositeImage(const IceTVoid *color_buffer,
                                          const IceTDouble *modelview_matrix,
                                          const IceTFloat *background_color);
 
+ICET_EXPORT IceTImage icetCompositeImageLayered(const IceTVoid *fragment_buffer,
+                                                IceTInt num_layers,
+                                                const IceTInt *valid_pixels_viewport,
+                                                const IceTDouble *projection_matrix,
+                                                const IceTDouble *modelview_matrix,
+                                                const IceTFloat *background_color);
+
 #define ICET_DIAG_OFF           (IceTEnum)0x0000
 #define ICET_DIAG_ERRORS        (IceTEnum)0x0001
 #define ICET_DIAG_WARNINGS      (IceTEnum)0x0003
