@@ -38,13 +38,17 @@
 #define ICET_IMAGE_DATA(image) \
     ((IceTVoid *)&(ICET_IMAGE_HEADER(image)[ICET_IMAGE_DATA_START_INDEX]))
 
-typedef struct IceTLayeredImageBufferData {
+typedef struct IceTLayeredImageHeader {
     IceTSizeType num_layers;
+} IceTLayeredImageHeader;
+
+typedef struct IceTLayeredImageBufferData {
+    IceTLayeredImageHeader header;
     IceTUByte fragments[];
 } IceTLayeredImageBufferData;
 
 typedef struct IceTLayeredImagePointerData {
-    IceTSizeType num_layers;
+    IceTLayeredImageHeader header;
     const IceTVoid *fragments;
 } IceTLayeredImagePointerData;
 
@@ -59,14 +63,24 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
 {
     if (!icetImageIsNull(image)) {
         IceTEnum magic_num =
-                ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
-                & ~ICET_IMAGE_FLAG_LAYERED;
-        if (   (magic_num != ICET_IMAGE_MAGIC_NUM)
-            && (magic_num != ICET_IMAGE_POINTERS_MAGIC_NUM) ) {
+                ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+        IceTEnum base_magic_num = magic_num & ~ICET_IMAGE_FLAG_LAYERED;
+        if (   (base_magic_num != ICET_IMAGE_MAGIC_NUM)
+            && (base_magic_num != ICET_IMAGE_POINTERS_MAGIC_NUM) ) {
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
                            "Detected invalid image header (magic num = 0x%X).",
                            magic_num);
         }
+    }
+}
+static void ICET_TEST_LAYERED_IMAGE_HEADER(IceTImage image)
+{
+    ICET_TEST_IMAGE_HEADER(image);
+
+    if (!icetImageIsLayered(image)) {
+        icetRaiseError(ICET_SANITY_CHECK_FAIL,
+            "Expected layered image, got non-layered type 0x%X.",
+            ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]);
     }
 }
 static void ICET_TEST_SPARSE_IMAGE_HEADER(IceTSparseImage image)
@@ -569,7 +583,7 @@ IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
     /* Set data. */
     {
         IceTLayeredImagePointerData *data = ICET_IMAGE_DATA(image);
-        data->num_layers = num_layers;
+        data->header.num_layers = num_layers;
         data->fragments = fragment_buffer;
     }
 
@@ -750,6 +764,13 @@ IceTSizeType icetImageGetNumPixels(const IceTImage image)
     if (!image.opaque_internals) return 0;
     return (  ICET_IMAGE_HEADER(image)[ICET_IMAGE_WIDTH_INDEX]
             * ICET_IMAGE_HEADER(image)[ICET_IMAGE_HEIGHT_INDEX] );
+}
+
+const IceTLayeredImageHeader *icetLayeredImageGetHeader(const IceTImage image)
+{
+    ICET_TEST_LAYERED_IMAGE_HEADER(image);
+    if (!image.opaque_internals) return 0;
+    return (const IceTLayeredImageHeader *)ICET_IMAGE_DATA(image);
 }
 
 IceTEnum icetSparseImageGetColorFormat(const IceTSparseImage image)
@@ -1106,6 +1127,12 @@ const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image)
         return icetLayeredImageGetFragmentsConstVoid(image);                    \
     }
 
+FRAGMENT_FORMAT(D32F,
+                IceTFloat,
+                0,
+                ICET_IMAGE_COLOR_NONE,
+                IceTFloat,
+                ICET_IMAGE_DEPTH_FLOAT);
 FRAGMENT_FORMAT(RGB32F_D32F,
                 IceTFloat,
                 3,
