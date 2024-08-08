@@ -23,6 +23,8 @@ extern "C" {
 #define ICET_SRC_ON_TOP         ICET_TRUE
 #define ICET_DEST_ON_TOP        ICET_FALSE
 
+typedef IceTSizeType IceTLayerCountType;
+
 ICET_EXPORT IceTImage icetGetStateBufferImage(IceTEnum pname,
                                               IceTSizeType width,
                                               IceTSizeType height);
@@ -33,6 +35,14 @@ ICET_EXPORT IceTSizeType icetImageBufferSizeType(IceTEnum color_format,
                                                  IceTEnum depth_format,
                                                  IceTSizeType width,
                                                  IceTSizeType height);
+ICET_EXPORT IceTSizeType icetLayeredImageBufferSize(IceTSizeType width,
+                                                    IceTSizeType height,
+                                                    IceTLayerCountType num_layers);
+ICET_EXPORT IceTSizeType icetLayeredImageBufferSizeType(IceTEnum color_format,
+                                                        IceTEnum depth_format,
+                                                        IceTSizeType width,
+                                                        IceTSizeType height,
+                                                        IceTLayerCountType num_layers);
 ICET_EXPORT IceTImage icetImageAssignBuffer(IceTVoid *buffer,
                                             IceTSizeType width,
                                             IceTSizeType height);
@@ -50,13 +60,13 @@ ICET_EXPORT IceTImage icetImagePointerAssignBuffer(IceTVoid *buffer,
 ICET_EXPORT IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
                                                       IceTSizeType width,
                                                       IceTSizeType height,
-                                                      IceTSizeType num_layers,
+                                                      IceTLayerCountType num_layers,
                                                       const IceTVoid *fragment_buffer);
 ICET_EXPORT IceTSizeType icetLayeredImagePointerBufferSize(void);
 ICET_EXPORT IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
                                                           IceTSizeType width,
                                                           IceTSizeType height,
-                                                          IceTSizeType num_layers,
+                                                          IceTLayerCountType num_layers,
                                                           const IceTVoid *fragment_buffer);
 ICET_EXPORT IceTBoolean icetImageIsLayered(const IceTImage image);
 ICET_EXPORT void icetImageAdjustForOutput(IceTImage image);
@@ -101,6 +111,14 @@ ICET_EXPORT IceTSizeType icetSparseImageBufferSizeType(IceTEnum color_format,
                                                        IceTEnum depth_format,
                                                        IceTSizeType width,
                                                        IceTSizeType height);
+ICET_EXPORT IceTSizeType icetSparseLayeredImageBufferSize(IceTSizeType width,
+                                                          IceTSizeType height,
+                                                          IceTLayerCountType num_layers);
+ICET_EXPORT IceTSizeType icetSparseLayeredImageBufferSizeType(IceTEnum color_format,
+                                                              IceTEnum depth_format,
+                                                              IceTSizeType width,
+                                                              IceTSizeType height,
+                                                              IceTLayerCountType num_layers);
 ICET_EXPORT IceTSparseImage icetGetStateBufferSparseImage(IceTEnum pname,
                                                           IceTSizeType width,
                                                           IceTSizeType height);
@@ -108,6 +126,14 @@ ICET_EXPORT IceTSparseImage icetSparseImageAssignBuffer(IceTVoid *buffer,
                                                         IceTSizeType width,
                                                         IceTSizeType height);
 ICET_EXPORT IceTSparseImage icetSparseImageNull(void);
+ICET_EXPORT IceTSparseImage icetGetStateBufferSparseLayeredImage(IceTEnum pname,
+                                                                 IceTSizeType width,
+                                                                 IceTSizeType height,
+                                                                 IceTLayerCountType num_layers);
+ICET_EXPORT IceTSparseImage icetSparseLayeredImageAssignBuffer(IceTVoid *buffer,
+                                                               IceTSizeType width,
+                                                               IceTSizeType height,
+                                                               IceTSizeType max_num_pixels);
 ICET_EXPORT IceTBoolean icetSparseImageIsNull(const IceTSparseImage image);
 ICET_EXPORT IceTEnum icetSparseImageGetColorFormat(const IceTSparseImage image);
 ICET_EXPORT IceTEnum icetSparseImageGetDepthFormat(const IceTSparseImage image);
