@@ -23,7 +23,7 @@ extern "C" {
 #define ICET_SRC_ON_TOP         ICET_TRUE
 #define ICET_DEST_ON_TOP        ICET_FALSE
 
-typedef IceTSizeType IceTLayerCountType;
+typedef IceTUnsignedInt8 IceTLayerCountType;
 
 ICET_EXPORT IceTImage icetGetStateBufferImage(IceTEnum pname,
                                               IceTSizeType width,
@@ -135,6 +135,7 @@ ICET_EXPORT IceTSparseImage icetSparseLayeredImageAssignBuffer(IceTVoid *buffer,
                                                                IceTSizeType height,
                                                                IceTSizeType max_num_pixels);
 ICET_EXPORT IceTBoolean icetSparseImageIsNull(const IceTSparseImage image);
+ICET_EXPORT IceTBoolean icetSparseImageIsLayered(const IceTSparseImage image);
 ICET_EXPORT IceTEnum icetSparseImageGetColorFormat(const IceTSparseImage image);
 ICET_EXPORT IceTEnum icetSparseImageGetDepthFormat(const IceTSparseImage image);
 ICET_EXPORT IceTSizeType icetSparseImageGetWidth(const IceTSparseImage image);

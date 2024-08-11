@@ -20,6 +20,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
+#include <IceTDevCommunication.h>
+#include <stdio.h>
+#endif
+
 #define ICET_IMAGE_MAGIC_NUM            (IceTEnum)0x004D5000
 #define ICET_IMAGE_POINTERS_MAGIC_NUM   (IceTEnum)0x004D5100
 #define ICET_SPARSE_IMAGE_MAGIC_NUM     (IceTEnum)0x004D6000
@@ -310,6 +315,15 @@ static IceTSizeType depthPixelSize(IceTEnum depth_format)
     }
 }
 
+static IceTSizeType layeredPixelSize(IceTEnum color_format,
+                                     IceTEnum depth_format,
+                                     IceTLayerCountType num_layers)
+{
+    const IceTSizeType fragment_size =  colorPixelSize(color_format)
+                                      + depthPixelSize(depth_format);
+    return sizeof(IceTLayerCountType) + num_layers * fragment_size;
+}
+
 IceTSizeType icetImageBufferSize(IceTSizeType width, IceTSizeType height)
 {
     IceTEnum color_format, depth_format;
@@ -352,13 +366,11 @@ IceTSizeType icetLayeredImageBufferSizeType(IceTEnum color_format,
                                             IceTSizeType height,
                                             IceTLayerCountType num_layers)
 {
-    const IceTSizeType fragment_size =  colorPixelSize(color_format)
-                                      + depthPixelSize(depth_format);
-    const IceTSizeType pixel_size =  sizeof(IceTLayerCountType)
-                                   + num_layers * fragment_size;
+    const IceTSizeType pixel_size =
+        layeredPixelSize(color_format, depth_format, num_layers);
 
     return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)
-            + width*height*pixel_size );
+            + width*height*pixel_size);
 }
 
 IceTSizeType icetImagePointerBufferSize(void)
@@ -435,7 +447,6 @@ IceTSizeType icetSparseLayeredImageBufferSizeType(IceTEnum color_format,
                                                   IceTLayerCountType num_layers)
 {
     IceTSizeType size;
-    IceTSizeType fragment_size;
     IceTSizeType pixel_size;
 
     /* A sparse image full of active pixels will be the same size as a full
@@ -455,8 +466,7 @@ IceTSizeType icetSparseLayeredImageBufferSizeType(IceTEnum color_format,
        could change the compress functions to not allow run lengths of size 1,
        but that could increase the time to compress and would definitely
        increase the complexity of the code. */
-    fragment_size = colorPixelSize(color_format) + depthPixelSize(depth_format);
-    pixel_size = sizeof(IceTLayerCountType) + num_layers * fragment_size;
+    pixel_size = layeredPixelSize(color_format, depth_format, num_layers);
     if (pixel_size < RUN_LENGTH_SIZE_LAYERED) {
         size += (RUN_LENGTH_SIZE_LAYERED - pixel_size)*((width*height+1)/2);
     }
@@ -800,6 +810,25 @@ IceTBoolean icetSparseImageIsNull(const IceTSparseImage image)
         return ICET_FALSE;
     }
 }
+
+IceTBoolean icetSparseImageIsLayered(const IceTSparseImage image)
+{
+    return ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+        & ICET_IMAGE_FLAG_LAYERED;
+}
+
+#ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
+static void icetSparseImageWriteToFile(const IceTSparseImage image,
+                                       const char *filename)
+{
+    FILE *const file = fopen(filename, "wb");
+    fwrite(image.opaque_internals,
+           sizeof(IceTSizeType),
+           icetSparseImageGetCompressedBufferSize(image),
+           file);
+    fclose(file);
+}
+#endif
 
 void icetImageAdjustForOutput(IceTImage image)
 {
@@ -2616,6 +2645,7 @@ static IceTSparseImage getCompressedRenderedBufferImage(
         IceTSizeType tile_width,
         IceTSizeType tile_height)
 {
+    IceTEnum composite_mode;
     IceTSparseImage sparseImage;
 
     if (*icetUnsafeStateGetBoolean(ICET_RENDER_LAYER_HOLDS_BUFFER))
@@ -2630,14 +2660,17 @@ static IceTSparseImage getCompressedRenderedBufferImage(
             rendered_viewport, target_viewport, tile_width, tile_height);
     }
 
-    if (!icetImageIsLayered(rendered_image)) {
-        sparseImage = icetGetStateBufferSparseImage(
-                    ICET_SPARSE_TILE_BUFFER, tile_width, tile_height);
-    } else {
+    icetGetEnumv(ICET_COMPOSITE_MODE, &composite_mode);
+
+    if (icetImageIsLayered(rendered_image)
+            && composite_mode == ICET_COMPOSITE_MODE_BLEND) {
         const IceTLayerCountType num_layers =
                     icetLayeredImageGetHeader(rendered_image)->num_layers;
         sparseImage = icetGetStateBufferSparseLayeredImage(
                     ICET_SPARSE_TILE_BUFFER, tile_width, tile_height, num_layers);
+    } else {
+        sparseImage = icetGetStateBufferSparseImage(
+                    ICET_SPARSE_TILE_BUFFER, tile_width, tile_height);
     }
 
     icetCompressImageRegion(rendered_image,
@@ -2646,7 +2679,13 @@ static IceTSparseImage getCompressedRenderedBufferImage(
                             tile_width,
                             tile_height,
                             sparseImage);
-    return sparseImage;
+
+    if (icetImageIsLayered(rendered_image)) {
+        exit(EXIT_SUCCESS);
+    }
+    else {
+        return sparseImage;
+    }
 }
 
 void icetCompressImage(const IceTImage image,

@@ -115,6 +115,20 @@
 #endif /*REGION*/
 #endif /*DEBUG*/
 
+    if (!icetImageIsLayered(INPUT_IMAGE)) {
+#define CT_PROCESS_PIXEL(dest, out_is_active)   \
+{                                               \
+    if (CT_ACTIVE()) {                          \
+        CT_WRITE_PIXEL(dest);                   \
+        out_is_active = ICET_TRUE;              \
+    } else {                                    \
+        out_is_active = ICET_FALSE;             \
+    }                                           \
+    CT_INCREMENT_PIXEL();                       \
+}
+
+#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE
+
     if (_composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
         if (_depth_format == ICET_IMAGE_DEPTH_FLOAT) {
           /* Use Z buffer for active pixel testing. */
@@ -412,12 +426,125 @@
                        "Encountered invalid composite mode 0x%X.",
                        _composite_mode);
     }
+#undef CT_PROCESS_PIXEL
+#undef CT_RUN_LENGTH_SIZE
+    } else { /* Input image is layererd. */
+#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
 
-    icetRaiseDebug("Compression: %f%%\n",
-        100.0f - (  100.0f*icetSparseImageGetCompressedBufferSize(OUTPUT_SPARSE_IMAGE)
-                  / icetImageBufferSizeType(_color_format, _depth_format,
-                                            icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
-                                            icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE)) ));
+        const IceTSizeType _num_layers =
+            icetLayeredImageGetHeader(INPUT_IMAGE)->num_layers;
+
+        switch (_depth_format) {
+        case ICET_IMAGE_DEPTH_FLOAT:
+            switch (_composite_mode) {
+            case ICET_COMPOSITE_MODE_Z_BUFFER:
+                /* TODO. */
+                break;
+            case ICET_COMPOSITE_MODE_BLEND:
+                if (!icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
+                    icetRaiseError(ICET_INVALID_VALUE,
+                        "Compression expected a layered output image.");
+                    break;
+                }
+
+#define CT_PROCESS_PIXEL(dest, out_is_active)                               \
+{                                                                           \
+    const IceTVoid *const end_of_pixel = _fragment + _num_layers;           \
+    IceTLayerCountType pixel_size = 0;                                      \
+    IceTLayerCountType *const pixel_size_out = (IceTLayerCountType *)dest;  \
+                                                                            \
+    dest += sizeof(IceTLayerCountType);                                     \
+                                                                            \
+    while (_fragment != end_of_pixel) {                                     \
+        if (_fragment->color[3] != 0) {                                     \
+            *(CTL_FRAGMENT_TYPE *)dest = *_fragment;                        \
+            dest += sizeof(CTL_FRAGMENT_TYPE);                              \
+            ++pixel_size;                                                   \
+        }                                                                   \
+                                                                            \
+        ++_fragment;                                                        \
+    }                                                                       \
+                                                                            \
+    *pixel_size_out = pixel_size;                                           \
+    _frag_count += pixel_size;                                              \
+    out_is_active = pixel_size != 0;                                        \
+    CT_INCREMENT_PIXEL();                                                   \
+}
+
+                switch (_color_format) {
+                case ICET_IMAGE_COLOR_RGBA_UBYTE:
+#define CTL_FRAGMENT_FORMAT RGBA8_D32F
+#include "compress_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGBA_FLOAT:
+#define CTL_FRAGMENT_FORMAT RGBA32F_D32F
+#include "compress_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGB_FLOAT:
+                case ICET_IMAGE_COLOR_NONE:
+                    icetRaiseError(ICET_INVALID_OPERATION,
+                                   "Blending requires a color format with an alpha channel.");
+                    break;
+
+                default:
+                    icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                                   "Encountered invalid color format 0x%X.",
+                                   _color_format);
+                }
+                break; /* case ICET_COMPOSITE_MODE_BLEND */
+            default:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Encountered invalid composite mode 0x%X.",
+                               _composite_mode);
+            }
+            break; /* case ICET_IMAGE_DEPTH_FLOAT */
+
+        case ICET_IMAGE_DEPTH_NONE:
+            icetRaiseError(ICET_INVALID_VALUE,
+                           "Layered images must contain depth information.");
+            break;
+
+        default:
+            icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                           "Encountered invalid depth format 0x%X.",
+                           _depth_format);
+        }
+
+#undef CT_PROCESS_PIXEL
+#undef CT_RUN_LENGTH_SIZE
+    }
+
+    {
+        IceTSizeType uncompressed_size;
+
+        if (icetImageIsLayered(INPUT_IMAGE)) {
+            uncompressed_size = icetLayeredImageBufferSizeType(
+                _color_format,
+                _depth_format,
+                icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
+                icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE),
+                icetLayeredImageGetHeader(INPUT_IMAGE)->num_layers);
+        } else {
+            uncompressed_size = icetImageBufferSizeType(
+                _color_format,
+                _depth_format,
+                icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
+                icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE));
+        }
+
+        icetRaiseDebug("Compression: %f%%\n",
+            100.0f - (  100.0f*icetSparseImageGetCompressedBufferSize(OUTPUT_SPARSE_IMAGE)
+                      / uncompressed_size ));
+    }
+
+#ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
+    if (icetCommRank() == 0) {
+        icetSparseImageWriteToFile(OUTPUT_SPARSE_IMAGE,
+                                   ICET_COMPRESSED_IMAGE_OUT_FILE);
+    }
+#endif
 }
 
 #undef INPUT_IMAGE

@@ -22,10 +22,7 @@
  *      CT_DEPTH_FORMAT - depth format IceTEnum for input and output
  *      CT_PIXEL_COUNT - the number of pixels in the original image (or a
  *              variable holding it.
- *      CT_ACTIVE() - provides a true value if the current pixel is active.
- *      CT_WRITE_PIXEL(pointer) - writes the current pixel to the pointer and
- *              increments the pointer.
- *      CT_INCREMENT_PIXEL() - Increments to the next input pixel.
+ *      CT_RUN_LENGTH_SIZE - number of bytes per run length block.
  *
  * The following macros are optional:
  *      CT_PADDING - If defined, enables inactive pixels to be placed
@@ -57,8 +54,8 @@
 #ifndef ACTIVE_RUN_LENGTH
 #error Need ACTIVE_RUN_LENGTH macro.  Is this included in image.c?
 #endif
-#ifndef RUN_LENGTH_SIZE
-#error Need RUN_LENGTH_SIZE macro.  Is this included in image.c?
+#ifndef CT_RUN_LENGTH_SIZE
+#error Need CT_RUN_LENGTH_SIZE macro.  Is this included in image.c?
 #endif
 
 #ifdef _MSC_VER
@@ -70,7 +67,8 @@
   IceTByte *_dest;  /* Use IceTByte for byte-based pointer arithmetic. */
     IceTSizeType _pixels = CT_PIXEL_COUNT;
     IceTSizeType _p;
-    IceTSizeType _count;
+    IceTSizeType _active_count;
+    IceTSizeType _inactive_count;
 #ifdef DEBUG
     IceTSizeType _totalcount = 0;
 #endif
@@ -81,9 +79,9 @@
     _dest = ICET_IMAGE_DATA(CT_COMPRESSED_IMAGE);
 
 #ifndef CT_PADDING
-    _count = 0;
+    _inactive_count = 0;
 #else /* CT_PADDING */
-    _count = CT_SPACE_BOTTOM*CT_FULL_WIDTH;
+    _inactive_count = CT_SPACE_BOTTOM*CT_FULL_WIDTH;
 
     if ((CT_SPACE_LEFT != 0) || (CT_SPACE_RIGHT != 0)) {
         IceTSizeType _line, _lastline;
@@ -91,36 +89,54 @@
              _line < _lastline; _line++) {
             IceTSizeType _x = CT_SPACE_LEFT;
             IceTSizeType _lastx = CT_FULL_WIDTH-CT_SPACE_RIGHT;
-            _count += CT_SPACE_LEFT;
+            _inactive_count += CT_SPACE_LEFT;
             while (ICET_TRUE) {
                 IceTVoid *_runlengths;
-                while ((_x < _lastx) && (!CT_ACTIVE())) {
+                _active_count = 0;
+                while ((_x < _lastx)) {
+                    IceTBoolean _is_active;
+                    CT_PROCESS_PIXEL(_dest, _is_active);
                     _x++;
-                    _count++;
-                    CT_INCREMENT_PIXEL();
+
+                    if (_is_active) {
+                        _active_count = 1;
+                        break;
+                    }
+
+                    _inactive_count++;
                 }
                 if (_x >= _lastx) break;
                 _runlengths = _dest;
-                _dest += RUN_LENGTH_SIZE;
-                INACTIVE_RUN_LENGTH(_runlengths) = _count;
+                _dest += CT_RUN_LENGTH_SIZE;
+                INACTIVE_RUN_LENGTH(_runlengths) = _inactive_count;
 #ifdef DEBUG
-                _totalcount += _count;
+                _totalcount += _inactive_count;
 #endif
-                _count = 0;
-                while ((_x < _lastx) && CT_ACTIVE()) {
-                    CT_WRITE_PIXEL(_dest);
-                    CT_INCREMENT_PIXEL();
-                    _count++;
+                _inactive_count = 0;
+                while ((_x < _lastx)) {
+                    IceTBoolean _is_active;
+                    CT_PROCESS_PIXEL(_dest, _is_active);
+
                     _x++;
+
+                    if (!_is_active) {
+                        _inactive_count = 1;
+                        break;
+                    }
+
+                    _active_count++;
                 }
-                ACTIVE_RUN_LENGTH(_runlengths) = _count;
-#ifdef DEBUG
-                _totalcount += _count;
+                ACTIVE_RUN_LENGTH(_runlengths) = _active_count;
+#ifdef CT_FRAG_COUNT
+                ACTIVE_RUN_LENGTH_FRAGMENTS(_runlengths) = CT_FRAG_COUNT;
+                CT_FRAG_COUNT = 0;
 #endif
-                _count = 0;
+#ifdef DEBUG
+                _totalcount += _active_count;
+#endif
                 if (_x >= _lastx) break;
             }
-            _count += CT_SPACE_RIGHT;
+            _inactive_count += CT_SPACE_RIGHT;
         }
     } else { /* CT_SPACE_LEFT == CT_SPACE_RIGHT == 0 */
         _pixels = (CT_FULL_HEIGHT-CT_SPACE_BOTTOM-CT_SPACE_TOP)*CT_FULL_WIDTH;
@@ -129,43 +145,60 @@
         _p = 0;
         while (_p < _pixels) {
             IceTVoid *_runlengths = _dest;
-            _dest += RUN_LENGTH_SIZE;
+            _dest += CT_RUN_LENGTH_SIZE;
           /* Count background pixels. */
-            while ((_p < _pixels) && (!CT_ACTIVE())) {
+            _active_count = 0;
+            while ((_p < _pixels)) {
+                IceTBoolean _is_active;
+                CT_PROCESS_PIXEL(_dest, _is_active);
                 _p++;
-                _count++;
-                CT_INCREMENT_PIXEL();
+
+                if (_is_active) {
+                    _active_count = 1;
+                    break;
+                }
+
+                _inactive_count++;
             }
-            INACTIVE_RUN_LENGTH(_runlengths) = _count;
+            INACTIVE_RUN_LENGTH(_runlengths) = _inactive_count;
 #ifdef DEBUG
-            _totalcount += _count;
+            _totalcount += _inactive_count;
 #endif
 
           /* Count and store active pixels. */
-            _count = 0;
-            while ((_p < _pixels) && CT_ACTIVE()) {
-                CT_WRITE_PIXEL(_dest);
-                CT_INCREMENT_PIXEL();
-                _count++;
-                _p++;
-            }
-            ACTIVE_RUN_LENGTH(_runlengths) = _count;
-#ifdef DEBUG
-            _totalcount += _count;
-#endif
+            _inactive_count = 0;
+            while ((_p < _pixels)) {
+                IceTBoolean _is_active;
+                CT_PROCESS_PIXEL(_dest, _is_active);
 
-            _count = 0;
+                _p++;
+
+                if (!_is_active) {
+                    _inactive_count = 1;
+                    break;
+                }
+
+                _active_count++;
+            }
+            ACTIVE_RUN_LENGTH(_runlengths) = _active_count;
+#ifdef CT_FRAG_COUNT
+            ACTIVE_RUN_LENGTH_FRAGMENTS(_runlengths) = CT_FRAG_COUNT;
+            CT_FRAG_COUNT = 0;
+#endif
+#ifdef DEBUG
+            _totalcount += _active_count;
+#endif
         }
 #ifdef CT_PADDING
     }
 
-    _count += CT_SPACE_TOP*CT_FULL_WIDTH;
-    if (_count > 0) {
-        INACTIVE_RUN_LENGTH(_dest) = _count;
+    _inactive_count += CT_SPACE_TOP*CT_FULL_WIDTH;
+    if (_inactive_count > 0) {
+        INACTIVE_RUN_LENGTH(_dest) = _inactive_count;
         ACTIVE_RUN_LENGTH(_dest) = 0;
-        _dest += RUN_LENGTH_SIZE;
+        _dest += CT_RUN_LENGTH_SIZE;
 #ifdef DEBUG
-        _totalcount += _count;
+        _totalcount += _inactive_count;
 #endif /*DEBUG*/
     }
 #endif /*CT_PADDING*/
@@ -201,6 +234,7 @@
 #undef CT_COLOR_FORMAT
 #undef CT_DEPTH_FORMAT
 #undef CT_PIXEL_COUNT
+#undef CT_FRAG_COUNT
 #undef CT_ACTIVE
 #undef CT_WRITE_PIXEL
 #undef CT_INCREMENT_PIXEL
