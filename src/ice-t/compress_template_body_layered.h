@@ -15,7 +15,7 @@
                                     _region_count = 0;                  \
                                 }
 #else
-#define CT_INCREMENT_PIXEL()
+#define CT_INCREMENT_PIXEL()    ;
 #endif
 
 #ifdef PADDING

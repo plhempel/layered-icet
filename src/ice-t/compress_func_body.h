@@ -433,7 +433,6 @@
     }
 #undef CT_PROCESS_PIXEL
     } else { /* Input image is layererd. */
-
         const IceTSizeType _num_layers =
             icetLayeredImageGetHeader(INPUT_IMAGE)->num_layers;
 
@@ -531,6 +530,7 @@
     *pixel_size_out = pixel_size;                                           \
     _frag_count += pixel_size;                                              \
     out_is_active = pixel_size != 0;                                        \
+    dest -= sizeof(IceTLayerCountType) & (pixel_size == 0);                 \
     CT_INCREMENT_PIXEL();                                                   \
 }
 #define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
