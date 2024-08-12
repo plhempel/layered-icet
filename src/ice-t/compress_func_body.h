@@ -116,6 +116,11 @@
 #endif /*DEBUG*/
 
     if (!icetImageIsLayered(INPUT_IMAGE)) {
+        if (icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
+            icetRaiseError(ICET_INVALID_VALUE,
+                "Compression expected a non-layered output image.");
+        }
+
 #define CT_PROCESS_PIXEL(dest, out_is_active)   \
 {                                               \
     if (CT_ACTIVE()) {                          \
@@ -427,9 +432,7 @@
                        _composite_mode);
     }
 #undef CT_PROCESS_PIXEL
-#undef CT_RUN_LENGTH_SIZE
     } else { /* Input image is layererd. */
-#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
 
         const IceTSizeType _num_layers =
             icetLayeredImageGetHeader(INPUT_IMAGE)->num_layers;
@@ -438,8 +441,67 @@
         case ICET_IMAGE_DEPTH_FLOAT:
             switch (_composite_mode) {
             case ICET_COMPOSITE_MODE_Z_BUFFER:
-                /* TODO. */
-                break;
+                if (icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
+                    icetRaiseError(ICET_INVALID_VALUE,
+                        "Compression expected a non-layered output image.");
+                    break;
+                }
+
+#define CT_PROCESS_PIXEL(dest, out_is_active)                       \
+{                                                                   \
+    const IceTVoid *const end_of_pixel = _fragment + _num_layers;   \
+                                                                    \
+    while (ICET_TRUE) {                                             \
+        if (_fragment == end_of_pixel) {                            \
+            out_is_active = ICET_FALSE;                             \
+            break;                                                  \
+        }                                                           \
+                                                                    \
+        if (_fragment->depth < 1) {                                 \
+            *(CTL_FRAGMENT_TYPE *)dest = *_fragment;                \
+            dest += sizeof(CTL_FRAGMENT_TYPE);                      \
+            out_is_active = ICET_TRUE;                              \
+            _fragment = end_of_pixel;                               \
+            break;                                                  \
+        }                                                           \
+                                                                    \
+        ++_fragment;                                                \
+    }                                                               \
+                                                                    \
+    CT_INCREMENT_PIXEL();                                           \
+}
+
+                switch (_color_format) {
+                case ICET_IMAGE_COLOR_NONE:
+#define CTL_FRAGMENT_FORMAT D32F
+#include "compress_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGB_FLOAT:
+#define CTL_FRAGMENT_FORMAT RGB32F_D32F
+#include "compress_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGBA_FLOAT:
+#define CTL_FRAGMENT_FORMAT RGBA32F_D32F
+#include "compress_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGBA_UBYTE:
+#define CTL_FRAGMENT_FORMAT RGBA8_D32F
+#include "compress_template_body_layered.h"
+                    break;
+
+                default:
+                    icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                                   "Encountered invalid color format 0x%X.",
+                                   _color_format);
+                }
+
+#undef CT_PROCESS_PIXEL
+#undef CT_RUN_LENGTH_SIZE
+                break; /* case ICET_COMPOSITE_MODE_Z_BUFFER */
+
             case ICET_COMPOSITE_MODE_BLEND:
                 if (!icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
                     icetRaiseError(ICET_INVALID_VALUE,
@@ -447,6 +509,7 @@
                     break;
                 }
 
+#define CT_FRAG_COUNT _frag_count
 #define CT_PROCESS_PIXEL(dest, out_is_active)                               \
 {                                                                           \
     const IceTVoid *const end_of_pixel = _fragment + _num_layers;           \
@@ -470,6 +533,7 @@
     out_is_active = pixel_size != 0;                                        \
     CT_INCREMENT_PIXEL();                                                   \
 }
+#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
 
                 switch (_color_format) {
                 case ICET_IMAGE_COLOR_RGBA_UBYTE:
@@ -512,6 +576,7 @@
                            _depth_format);
         }
 
+#undef CT_FRAG_COUNT
 #undef CT_PROCESS_PIXEL
 #undef CT_RUN_LENGTH_SIZE
     }

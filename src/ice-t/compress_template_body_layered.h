@@ -32,8 +32,9 @@
     IceTSizeType _region_count = 0;
 #endif
 
-#define CT_FRAG_COUNT _frag_count
+#ifdef CT_FRAG_COUNT
     IceTSizeType CT_FRAG_COUNT = 0;
+#endif
 
 #define CTL_CONCAT_(T1, T2) T1 ## T2
 #define CTL_CONCAT(T1, T2) CTL_CONCAT_(T1, T2)
