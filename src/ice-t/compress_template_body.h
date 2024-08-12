@@ -91,7 +91,8 @@
             IceTSizeType _lastx = CT_FULL_WIDTH-CT_SPACE_RIGHT;
             _inactive_count += CT_SPACE_LEFT;
             while (ICET_TRUE) {
-                IceTVoid *_runlengths;
+                IceTVoid *_runlengths = _dest;
+                _dest += CT_RUN_LENGTH_SIZE;
                 _active_count = 0;
                 while ((_x < _lastx)) {
                     IceTBoolean _is_active;
@@ -105,9 +106,12 @@
 
                     _inactive_count++;
                 }
-                if (_x >= _lastx) break;
-                _runlengths = _dest;
-                _dest += CT_RUN_LENGTH_SIZE;
+
+                if (_x >= _lastx) {
+                    _dest -= CT_RUN_LENGTH_SIZE;
+                    break;
+                }
+
                 INACTIVE_RUN_LENGTH(_runlengths) = _inactive_count;
 #ifdef DEBUG
                 _totalcount += _inactive_count;
