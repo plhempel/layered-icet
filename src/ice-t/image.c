@@ -44,7 +44,7 @@
     ((IceTVoid *)&(ICET_IMAGE_HEADER(image)[ICET_IMAGE_DATA_START_INDEX]))
 
 typedef struct IceTLayeredImageHeader {
-    IceTLayerCountType num_layers;
+    IceTLayerCount num_layers;
 } IceTLayeredImageHeader;
 
 typedef struct IceTLayeredImageBufferData {
@@ -317,11 +317,11 @@ static IceTSizeType depthPixelSize(IceTEnum depth_format)
 
 static IceTSizeType layeredPixelSize(IceTEnum color_format,
                                      IceTEnum depth_format,
-                                     IceTLayerCountType num_layers)
+                                     IceTLayerCount num_layers)
 {
     const IceTSizeType fragment_size =  colorPixelSize(color_format)
                                       + depthPixelSize(depth_format);
-    return sizeof(IceTLayerCountType) + num_layers * fragment_size;
+    return sizeof(IceTLayerCount) + num_layers * fragment_size;
 }
 
 IceTSizeType icetImageBufferSize(IceTSizeType width, IceTSizeType height)
@@ -349,7 +349,7 @@ IceTSizeType icetImageBufferSizeType(IceTEnum color_format,
 
 IceTSizeType icetLayeredImageBufferSize(IceTSizeType width,
                                         IceTSizeType height,
-                                        IceTLayerCountType num_layers)
+                                        IceTLayerCount num_layers)
 {
     IceTEnum color_format, depth_format;
 
@@ -364,7 +364,7 @@ IceTSizeType icetLayeredImageBufferSizeType(IceTEnum color_format,
                                             IceTEnum depth_format,
                                             IceTSizeType width,
                                             IceTSizeType height,
-                                            IceTLayerCountType num_layers)
+                                            IceTLayerCount num_layers)
 {
     const IceTSizeType pixel_size =
         layeredPixelSize(color_format, depth_format, num_layers);
@@ -429,7 +429,7 @@ IceTSizeType icetSparseImageBufferSizeType(IceTEnum color_format,
 
 IceTSizeType icetSparseLayeredImageBufferSize(IceTSizeType width,
                                               IceTSizeType height,
-                                              IceTLayerCountType num_layers)
+                                              IceTLayerCount num_layers)
 {
     IceTEnum color_format, depth_format;
 
@@ -444,7 +444,7 @@ IceTSizeType icetSparseLayeredImageBufferSizeType(IceTEnum color_format,
                                                   IceTEnum depth_format,
                                                   IceTSizeType width,
                                                   IceTSizeType height,
-                                                  IceTLayerCountType num_layers)
+                                                  IceTLayerCount num_layers)
 {
     IceTSizeType size;
     IceTSizeType pixel_size;
@@ -511,7 +511,7 @@ IceTImage icetGetStatePointerImage(IceTEnum pname,
 IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
                                           IceTSizeType width,
                                           IceTSizeType height,
-                                          IceTLayerCountType num_layers,
+                                          IceTLayerCount num_layers,
                                           const IceTVoid *fragment_buffer)
 {
     IceTVoid *buffer;
@@ -634,7 +634,7 @@ IceTImage icetImagePointerAssignBuffer(IceTVoid *buffer,
 IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
                                               IceTSizeType width,
                                               IceTSizeType height,
-                                              IceTLayerCountType num_layers,
+                                              IceTLayerCount num_layers,
                                               const IceTVoid *fragment_buffer)
 {
     /* Adapted from `icetImagePointerAssignBuffer`. */
@@ -767,7 +767,7 @@ IceTSparseImage icetSparseImageAssignBuffer(IceTVoid *buffer,
 IceTSparseImage icetGetStateBufferSparseLayeredImage(IceTEnum pname,
                                                      IceTSizeType width,
                                                      IceTSizeType height,
-                                                     IceTLayerCountType num_layers)
+                                                     IceTLayerCount num_layers)
 {
     IceTVoid *buffer;
     IceTSizeType buffer_size;
@@ -2664,7 +2664,7 @@ static IceTSparseImage getCompressedRenderedBufferImage(
 
     if (icetImageIsLayered(rendered_image)
             && composite_mode == ICET_COMPOSITE_MODE_BLEND) {
-        const IceTLayerCountType num_layers =
+        const IceTLayerCount num_layers =
                     icetLayeredImageGetHeader(rendered_image)->num_layers;
         sparseImage = icetGetStateBufferSparseLayeredImage(
                     ICET_SPARSE_TILE_BUFFER, tile_width, tile_height, num_layers);

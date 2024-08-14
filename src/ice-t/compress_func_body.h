@@ -121,18 +121,16 @@
                 "Compression expected a non-layered output image.");
         }
 
-#define CT_PROCESS_PIXEL(dest, out_is_active)   \
-{                                               \
-    if (CT_ACTIVE()) {                          \
-        CT_WRITE_PIXEL(dest);                   \
-        out_is_active = ICET_TRUE;              \
-    } else {                                    \
-        out_is_active = ICET_FALSE;             \
-    }                                           \
-    CT_INCREMENT_PIXEL();                       \
-}
-
 #define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE
+#define CT_TEST_PIXEL(out) out = CT_ACTIVE();
+#define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)   \
+{                                                       \
+    CT_TEST_PIXEL(out_is_active);                       \
+                                                        \
+    if (out_is_active) {                                \
+        CT_WRITE_PIXEL(dest);                           \
+    }                                                   \
+}
 
     if (_composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
         if (_depth_format == ICET_IMAGE_DEPTH_FLOAT) {
@@ -431,7 +429,8 @@
                        "Encountered invalid composite mode 0x%X.",
                        _composite_mode);
     }
-#undef CT_PROCESS_PIXEL
+#undef CT_TEST_PIXEL
+#undef CT_WRITE_PIXEL_IF_ACTIVE
     } else { /* Input image is layererd. */
         const IceTSizeType _num_layers =
             icetLayeredImageGetHeader(INPUT_IMAGE)->num_layers;
@@ -446,28 +445,29 @@
                     break;
                 }
 
-#define CT_PROCESS_PIXEL(dest, out_is_active)                       \
+#define CT_TEST_PIXEL(out)                                          \
 {                                                                   \
-    const IceTVoid *const end_of_pixel = _fragment + _num_layers;   \
+    out = ICET_FALSE;                                               \
                                                                     \
-    while (ICET_TRUE) {                                             \
-        if (_fragment == end_of_pixel) {                            \
-            out_is_active = ICET_FALSE;                             \
+    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
+        if (_fragment[layer].depth < 1) {                           \
+            out = ICET_TRUE;                                        \
             break;                                                  \
         }                                                           \
+    }                                                               \
+}
+#define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)               \
+{                                                                   \
+    out_is_active = ICET_FALSE;                                     \
                                                                     \
-        if (_fragment->depth < 1) {                                 \
-            *(CTL_FRAGMENT_TYPE *)dest = *_fragment;                \
+    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
+        if (_fragment[layer].depth < 1) {                           \
+            *(CTL_FRAGMENT_TYPE *)dest = _fragment[layer];          \
             dest += sizeof(CTL_FRAGMENT_TYPE);                      \
             out_is_active = ICET_TRUE;                              \
-            _fragment = end_of_pixel;                               \
             break;                                                  \
         }                                                           \
-                                                                    \
-        ++_fragment;                                                \
     }                                                               \
-                                                                    \
-    CT_INCREMENT_PIXEL();                                           \
 }
 
                 switch (_color_format) {
@@ -497,8 +497,9 @@
                                    _color_format);
                 }
 
-#undef CT_PROCESS_PIXEL
 #undef CT_RUN_LENGTH_SIZE
+#undef CT_TEST_PIXEL
+#undef CT_WRITE_PIXEL_IF_ACTIVE
                 break; /* case ICET_COMPOSITE_MODE_Z_BUFFER */
 
             case ICET_COMPOSITE_MODE_BLEND:
@@ -509,31 +510,42 @@
                 }
 
 #define CT_FRAG_COUNT _frag_count
-#define CT_PROCESS_PIXEL(dest, out_is_active)                               \
-{                                                                           \
-    const IceTVoid *const end_of_pixel = _fragment + _num_layers;           \
-    IceTLayerCountType pixel_size = 0;                                      \
-    IceTLayerCountType *const pixel_size_out = (IceTLayerCountType *)dest;  \
-                                                                            \
-    dest += sizeof(IceTLayerCountType);                                     \
-                                                                            \
-    while (_fragment != end_of_pixel) {                                     \
-        if (_fragment->color[3] != 0) {                                     \
-            *(CTL_FRAGMENT_TYPE *)dest = *_fragment;                        \
-            dest += sizeof(CTL_FRAGMENT_TYPE);                              \
-            ++pixel_size;                                                   \
-        }                                                                   \
-                                                                            \
-        ++_fragment;                                                        \
-    }                                                                       \
-                                                                            \
-    *pixel_size_out = pixel_size;                                           \
-    _frag_count += pixel_size;                                              \
-    out_is_active = pixel_size != 0;                                        \
-    dest -= sizeof(IceTLayerCountType) & (pixel_size == 0);                 \
-    CT_INCREMENT_PIXEL();                                                   \
-}
 #define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
+#define CT_TEST_PIXEL(out)                                          \
+{                                                                   \
+    out = ICET_FALSE;                                               \
+                                                                    \
+    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
+        if (_fragment[layer].color[3] != 0) {                       \
+            out = ICET_TRUE;                                        \
+            break;                                                  \
+        }                                                           \
+    }                                                               \
+}
+#define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)               \
+{                                                                   \
+    IceTLayerCount pixel_size = 0;                                  \
+    IceTLayerCount *const pixel_size_out = (IceTLayerCount *)dest;  \
+                                                                    \
+    dest += sizeof(IceTLayerCount);                                 \
+                                                                    \
+    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
+        if (_fragment[layer].color[3] != 0) {                       \
+            *(CTL_FRAGMENT_TYPE *)dest = _fragment[layer];          \
+            dest += sizeof(CTL_FRAGMENT_TYPE);                      \
+            ++pixel_size;                                           \
+        }                                                           \
+    }                                                               \
+                                                                    \
+    if (pixel_size == 0) {                                          \
+        dest = (IceTByte *)pixel_size_out;                          \
+        out_is_active = ICET_FALSE;                                 \
+    } else {                                                        \
+        *pixel_size_out = pixel_size;                               \
+        _frag_count += pixel_size;                                  \
+        out_is_active = pixel_size = ICET_TRUE;                     \
+    }                                                               \
+}
 
                 switch (_color_format) {
                 case ICET_IMAGE_COLOR_RGBA_UBYTE:
@@ -557,6 +569,10 @@
                                    "Encountered invalid color format 0x%X.",
                                    _color_format);
                 }
+#undef CT_FRAG_COUNT
+#undef CT_RUN_LENGTH_SIZE
+#undef CT_TEST_PIXEL
+#undef CT_WRITE_PIXEL_IF_ACTIVE
                 break; /* case ICET_COMPOSITE_MODE_BLEND */
             default:
                 icetRaiseError(ICET_SANITY_CHECK_FAIL,
@@ -575,10 +591,6 @@
                            "Encountered invalid depth format 0x%X.",
                            _depth_format);
         }
-
-#undef CT_FRAG_COUNT
-#undef CT_PROCESS_PIXEL
-#undef CT_RUN_LENGTH_SIZE
     }
 
     {

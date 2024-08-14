@@ -9,13 +9,14 @@
 #define CT_PIXEL_COUNT          _pixel_count
 
 #ifdef REGION
-#define CT_INCREMENT_PIXEL()    _region_count++;                        \
+#define CT_INCREMENT_PIXEL()    _fragment += _num_layers;               \
+                                _region_count++;                        \
                                 if (_region_count >= _region_width) {   \
                                     _fragment += _region_x_skip;        \
                                     _region_count = 0;                  \
                                 }
 #else
-#define CT_INCREMENT_PIXEL()    ;
+#define CT_INCREMENT_PIXEL()    _fragment += _num_layers;
 #endif
 
 #ifdef PADDING
