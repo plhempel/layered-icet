@@ -20,14 +20,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* If defined, the result of every image compression will be written to the path
+ * given by the define for debugging purposes.
+ */
 #ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
 #include <IceTDevCommunication.h>
+
 #include <stdio.h>
 #endif
 
 #define ICET_IMAGE_MAGIC_NUM            (IceTEnum)0x004D5000
 #define ICET_IMAGE_POINTERS_MAGIC_NUM   (IceTEnum)0x004D5100
 #define ICET_SPARSE_IMAGE_MAGIC_NUM     (IceTEnum)0x004D6000
+/* Flag combined with another magic number to indicate that an image has a
+ * layered format, allowing for multiple fragments (color-depth pairs) per
+ * pixel.
+ */
 #define ICET_IMAGE_FLAG_LAYERED         (IceTEnum)0x00000001
 
 #define ICET_IMAGE_MAGIC_NUM_INDEX              0
@@ -43,15 +51,18 @@
 #define ICET_IMAGE_DATA(image) \
     ((IceTVoid *)&(ICET_IMAGE_HEADER(image)[ICET_IMAGE_DATA_START_INDEX]))
 
+/* In addition to the regular header, layered images have a nested sub-header
+ * at the start of their data containing metadata specific to layered images.
+ * Fragments are stored after the sub-header either directly in the image buffer
+ * or referenced by a pointer, just like in non-layered images.
+ */
 typedef struct IceTLayeredImageHeader {
     IceTLayerCount num_layers;
 } IceTLayeredImageHeader;
-
 typedef struct IceTLayeredImageBufferData {
     IceTLayeredImageHeader header;
     IceTUByte fragments[];
 } IceTLayeredImageBufferData;
-
 typedef struct IceTLayeredImagePointerData {
     IceTLayeredImageHeader header;
     const IceTVoid *fragments;
@@ -62,7 +73,11 @@ typedef IceTUnsignedInt32 IceTRunLengthType;
 #define INACTIVE_RUN_LENGTH(rl) (((IceTRunLengthType *)(rl))[0])
 #define ACTIVE_RUN_LENGTH(rl)   (((IceTRunLengthType *)(rl))[1])
 #define RUN_LENGTH_SIZE         ((IceTSizeType)(2*sizeof(IceTRunLengthType)))
-/* Only used for layered images. */
+/* Since sparse layered images do not have a fixed number of active fragments
+ * per pixel, the number of active fragments in a run must be stored separately,
+ * in order for runs to be quickly skipped without having to examine each pixel.
+ * Non-layered images do not have this field.
+ */
 #define ACTIVE_RUN_LENGTH_FRAGMENTS(rl) (((IceTRunLengthType *)(rl))[2])
 #define RUN_LENGTH_SIZE_LAYERED         ((IceTSizeType)(3*sizeof(IceTRunLengthType)))
 
@@ -72,6 +87,7 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
     if (!icetImageIsNull(image)) {
         IceTEnum magic_num =
                 ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+        /* Allow both layered and non-layered images by ignoring the flag. */
         IceTEnum base_magic_num = magic_num & ~ICET_IMAGE_FLAG_LAYERED;
         if (   (base_magic_num != ICET_IMAGE_MAGIC_NUM)
             && (base_magic_num != ICET_IMAGE_POINTERS_MAGIC_NUM) ) {
@@ -81,6 +97,9 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
         }
     }
 }
+/* Check whether an `IceTImage` has a valid magic number indicating a layered
+ * format with multiple fragments per pixel.
+ */
 static void ICET_TEST_LAYERED_IMAGE_HEADER(IceTImage image)
 {
     ICET_TEST_IMAGE_HEADER(image);
@@ -94,17 +113,20 @@ static void ICET_TEST_LAYERED_IMAGE_HEADER(IceTImage image)
 static void ICET_TEST_SPARSE_IMAGE_HEADER(IceTSparseImage image)
 {
     if (!icetSparseImageIsNull(image)) {
-        if (    (ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
-                 & ~ICET_IMAGE_FLAG_LAYERED)
-            != ICET_SPARSE_IMAGE_MAGIC_NUM ) {
+        const IceTEnum magic_num =
+            ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+        /* Allow both layered and non-layered images by ignoring the flag. */
+        const IceTEnum base_magic_num = magic_num & ~ICET_IMAGE_FLAG_LAYERED;
+        if (base_magic_num != ICET_SPARSE_IMAGE_MAGIC_NUM ) {
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
                            "Detected invalid image header (magic num = 0x%X).",
-                           ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]);
+                           magic_num);
         }
     }
 }
 #else /*DEBUG*/
 #define ICET_TEST_IMAGE_HEADER(image)
+#define ICET_TEST_LAYERED_IMAGE_HEADER(image)
 #define ICET_TEST_SPARSE_IMAGE_HEADER(image)
 #endif /*DEBUG*/
 
@@ -315,15 +337,6 @@ static IceTSizeType depthPixelSize(IceTEnum depth_format)
     }
 }
 
-static IceTSizeType layeredPixelSize(IceTEnum color_format,
-                                     IceTEnum depth_format,
-                                     IceTLayerCount num_layers)
-{
-    const IceTSizeType fragment_size =  colorPixelSize(color_format)
-                                      + depthPixelSize(depth_format);
-    return sizeof(IceTLayerCount) + num_layers * fragment_size;
-}
-
 IceTSizeType icetImageBufferSize(IceTSizeType width, IceTSizeType height)
 {
     IceTEnum color_format, depth_format;
@@ -366,11 +379,12 @@ IceTSizeType icetLayeredImageBufferSizeType(IceTEnum color_format,
                                             IceTSizeType height,
                                             IceTLayerCount num_layers)
 {
-    const IceTSizeType pixel_size =
-        layeredPixelSize(color_format, depth_format, num_layers);
+    const IceTSizeType fragment_size =
+        colorPixelSize(color_format) + depthPixelSize(depth_format);
 
-    return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)
-            + width*height*pixel_size);
+    return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)  /* Common header. */
+            + sizeof(IceTLayeredImageBufferData)            /* Layered image sub-header. */
+            + width*height*num_layers*fragment_size);       /* Fragments. */
 }
 
 IceTSizeType icetImagePointerBufferSize(void)
@@ -381,8 +395,8 @@ IceTSizeType icetImagePointerBufferSize(void)
 
 IceTSizeType icetLayeredImagePointerBufferSize(void)
 {
-    return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)
-            + sizeof(IceTLayeredImagePointerData));
+    return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)  /* Common header. */
+            + sizeof(IceTLayeredImagePointerData));         /* Sub-header and pointer. */
 }
 
 IceTSizeType icetSparseImageBufferSize(IceTSizeType width, IceTSizeType height)
@@ -446,30 +460,29 @@ IceTSizeType icetSparseLayeredImageBufferSizeType(IceTEnum color_format,
                                                   IceTSizeType height,
                                                   IceTLayerCount num_layers)
 {
-    IceTSizeType size;
-    IceTSizeType pixel_size;
+    /* Each fragment consists of a color and a depth value. */
+    const IceTSizeType fragment_size =  colorPixelSize(color_format)
+                                      + depthPixelSize(depth_format);
+    /* Each pixel starts with the number of active fragments at that pixel,
+     * followed by the fragments themselves.  A pixel is largest if all
+     * fragments are active. */
+    const IceTSizeType pixel_size =  sizeof(IceTLayerCount)
+                                   + num_layers*fragment_size;
 
-    /* A sparse image full of active pixels will be the same size as a full
-       image plus a set of run lengths. */
-    size = (  RUN_LENGTH_SIZE_LAYERED
-            + icetLayeredImageBufferSizeType(
-                    color_format, depth_format, width, height, num_layers) );
+    /* Usually the maximum size will be that of an image with only active
+     * fragments. */
+    IceTSizeType size =
+          ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)  /* Header. */
+        + RUN_LENGTH_SIZE_LAYERED                       /* Run lengths. */
+        + width*height*pixel_size;                      /* Active pixels. */
 
-    /* For most common image formats, this is as large as the sparse image may
-       be.  When the size of the run length pair is no bigger than the size of a
-       pixel (the amount of data saved by writing the run lengths), then even in
-       the pathological case of every other pixel being active.  However, it is
-       possible that the run lengths take more space to store than the pixel
-       data.  Thus, if there is an inactive run length of one, it is possible to
-       have the data set a little bigger.  It is extremely unlikely to need this
-       much memory, but we will have to allocate it just in case.  I suppose we
-       could change the compress functions to not allow run lengths of size 1,
-       but that could increase the time to compress and would definitely
-       increase the complexity of the code. */
-    pixel_size = layeredPixelSize(color_format, depth_format, num_layers);
+    /* If a set of run lengths is larger than a pixel, the biggest image is one
+     * that maximizes the number of runs by alternating between active and
+     * inactive pixels. */
     if (pixel_size < RUN_LENGTH_SIZE_LAYERED) {
         size += (RUN_LENGTH_SIZE_LAYERED - pixel_size)*((width*height+1)/2);
     }
+
     return size;
 }
 
@@ -637,9 +650,10 @@ IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
                                               IceTLayerCount num_layers,
                                               const IceTVoid *fragment_buffer)
 {
-    /* Adapted from `icetImagePointerAssignBuffer`. */
+    /* Set common header fields. */
     IceTImage image = icetImageAssignBuffer(buffer, width, height);
 
+    /* Set header fields different for layered images. */
     {
         IceTInt *header = ICET_IMAGE_HEADER(image);
         /* Mark image as layered. */
@@ -649,27 +663,19 @@ IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
         header[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX] = -1;
     }
 
-    /* Check the depth format. */
-    {
-        switch (icetImageGetDepthFormat(image)) {
-        case ICET_IMAGE_DEPTH_FLOAT:
-            break; /* Format is supported. */
-        case ICET_IMAGE_DEPTH_NONE:
+    /* Check that there is depth information. */
+    if (icetImageGetDepthFormat(image) == ICET_IMAGE_DEPTH_NONE) {
             icetRaiseError(ICET_INVALID_VALUE,
-                "Layered images must contain depth information.");
-            break;
-        default:
-            break; /* Unreachable. */
-        }
+                           "Layered images must contain depth information.");
     }
 
-    /* Check that the assigned data is not NULL. */
+    /* Check that there is a fragment buffer. */
     if (fragment_buffer == NULL) {
         icetRaiseError(ICET_INVALID_VALUE,
                        "Layered images must have a fragment buffer.");
     }
 
-    /* Set data. */
+    /* Set sub-header and data. */
     {
         IceTLayeredImagePointerData *data = ICET_IMAGE_DATA(image);
         data->header.num_layers = num_layers;
@@ -775,22 +781,74 @@ IceTSparseImage icetGetStateBufferSparseLayeredImage(IceTEnum pname,
     buffer_size = icetSparseLayeredImageBufferSize(width, height, num_layers);
     buffer = icetGetStateBuffer(pname, buffer_size);
 
-    return icetSparseLayeredImageAssignBuffer(buffer,
-                                              width,
-                                              height,
-                                              width*height*num_layers);
+    return icetSparseLayeredImageAssignBuffer(buffer, width, height);
 }
 
 IceTSparseImage icetSparseLayeredImageAssignBuffer(IceTVoid *buffer,
                                                    IceTSizeType width,
-                                                   IceTSizeType height,
-                                                   IceTSizeType max_num_pixels)
+                                                   IceTSizeType height)
 {
-    IceTSparseImage image = icetSparseImageAssignBuffer(buffer, width, height);
-    IceTInt *const header = ICET_IMAGE_HEADER(image);
+    IceTSparseImage image;
+    IceTEnum color_format, depth_format;
 
-    header[ICET_IMAGE_MAGIC_NUM_INDEX]      |= ICET_IMAGE_FLAG_LAYERED;
-    header[ICET_IMAGE_MAX_NUM_PIXELS_INDEX]  = max_num_pixels;
+    /* Assign the image buffer and ensure that it is valid. */
+    image.opaque_internals = buffer;
+
+    if (buffer == NULL) {
+        icetRaiseError(ICET_INVALID_VALUE,
+            "Tried to create sparse layered image with NULL buffer.");
+        return image;
+    }
+
+    /* Validate color and depth format. */
+    {
+        icetGetEnumv(ICET_COLOR_FORMAT, &color_format);
+        icetGetEnumv(ICET_DEPTH_FORMAT, &depth_format);
+
+        switch (color_format) {
+        case ICET_IMAGE_COLOR_RGBA_UBYTE:
+        case ICET_IMAGE_COLOR_RGBA_FLOAT:
+        case ICET_IMAGE_COLOR_RGB_FLOAT:
+        case ICET_IMAGE_COLOR_NONE:
+            /* Format OK. */
+            break;
+        default:
+            icetRaiseError(ICET_INVALID_ENUM,
+                           "Invalid color format %#X.", color_format);
+            color_format = ICET_IMAGE_COLOR_NONE;
+        }
+
+        switch (depth_format) {
+        case ICET_IMAGE_DEPTH_FLOAT:
+            /* Format OK. */
+            break;
+        case ICET_IMAGE_DEPTH_NONE:
+            icetRaiseError(ICET_INVALID_VALUE,
+                           "Layered images must contain depth information.");
+            break;
+        default:
+            icetRaiseError(ICET_INVALID_ENUM,
+                           "Invalid depth format %#X.", depth_format);
+            depth_format = ICET_IMAGE_DEPTH_NONE;
+        }
+    }
+
+    /* Set metadata. */
+    {
+        IceTInt *const header = ICET_IMAGE_HEADER(image);
+
+        header[ICET_IMAGE_MAGIC_NUM_INDEX] =  ICET_SPARSE_IMAGE_MAGIC_NUM
+                                            | ICET_IMAGE_FLAG_LAYERED;
+        header[ICET_IMAGE_COLOR_FORMAT_INDEX]       = color_format;
+        header[ICET_IMAGE_DEPTH_FORMAT_INDEX]       = depth_format;
+        header[ICET_IMAGE_WIDTH_INDEX]              = (IceTInt)width;
+        header[ICET_IMAGE_HEIGHT_INDEX]             = (IceTInt)height;
+        header[ICET_IMAGE_MAX_NUM_PIXELS_INDEX]     = (IceTInt)(width*height);
+        header[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX] = 0;
+    }
+
+  /* Make sure the runlengths are valid. */
+    icetClearSparseImage(image);
 
     return image;
 }
@@ -818,14 +876,18 @@ IceTBoolean icetSparseImageIsLayered(const IceTSparseImage image)
 }
 
 #ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
+/* Store the used part of an IceTSparseImage's buffer in a file as binary. */
 static void icetSparseImageWriteToFile(const IceTSparseImage image,
                                        const char *filename)
 {
+    /* Open the file in binary mode, creating it if necessary. */
     FILE *const file = fopen(filename, "wb");
+    /* Store only the part of the buffer that has actually been written to. */
     fwrite(image.opaque_internals,
-           sizeof(IceTSizeType),
+           sizeof(IceTUByte),
            icetSparseImageGetCompressedBufferSize(image),
            file);
+    /* Flush and close the stream. */
     fclose(file);
 }
 #endif
@@ -1227,12 +1289,18 @@ const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image)
         return ((IceTLayeredImagePointerData*)ICET_IMAGE_DATA(image))->fragments;
     default:
         icetRaiseError(ICET_INVALID_OPERATION,
-            "Cannot get layered fragments from image of type 0x%X.",
+            "Cannot get layered fragments from image of type %#X.",
             magic_number);
         return NULL;
     }
 }
 
+/* In a layered image, each pixel may contain multiple fragments, each made up
+ * of a depth value and optionally a color.
+ * For every combination of color and depth format, define a fragment type and
+ * the correspondingly typed fragment buffer accessor function, using a naming
+ * scheme based on OpenGL image formats.
+ */
 #define FRAGMENT_FORMAT(format,                                                 \
                         color_type,                                             \
                         color_channels,                                         \
@@ -1246,20 +1314,20 @@ const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image)
                                                                                 \
     const IceTFragment_##format *icetLayeredImageGetFragmentsConst_##format(    \
             const IceTImage image) {                                            \
-        const IceTEnum runtime_color_format = icetImageGetColorFormat(image);   \
-        const IceTEnum runtime_depth_format = icetImageGetDepthFormat(image);   \
+        const IceTEnum image_color_format = icetImageGetColorFormat(image);     \
+        const IceTEnum image_depth_format = icetImageGetDepthFormat(image);     \
                                                                                 \
-        if (runtime_color_format != color_format) {                             \
+        if (image_color_format != color_format) {                               \
             icetRaiseError(ICET_INVALID_OPERATION,                              \
-                "Expected color format " #color_format " (%X), got %X.",        \
-                color_format, runtime_color_format);                            \
+                "Expected color format " #color_format " (%#X), got %#X.",      \
+                color_format, image_color_format);                              \
             return NULL;                                                        \
         }                                                                       \
                                                                                 \
-        if (runtime_depth_format != depth_format) {                             \
+        if (image_depth_format != depth_format) {                               \
             icetRaiseError(ICET_INVALID_OPERATION,                              \
-                "Expected depth format " #depth_format " (%X), got %X.",        \
-                depth_format, runtime_depth_format);                            \
+                "Expected depth format " #depth_format " (%#X), got %#X.",      \
+                depth_format, image_depth_format);                              \
             return NULL;                                                        \
         }                                                                       \
                                                                                 \
@@ -2496,6 +2564,7 @@ void icetClearImage(IceTImage image)
 void icetClearSparseImage(IceTSparseImage image)
 {
     IceTByte *data;
+    IceTVoid *data_end;
 
     ICET_TEST_SPARSE_IMAGE_HEADER(image);
 
@@ -2506,7 +2575,15 @@ void icetClearSparseImage(IceTSparseImage image)
     INACTIVE_RUN_LENGTH(data) = icetSparseImageGetNumPixels(image);
     ACTIVE_RUN_LENGTH(data) = 0;
 
-    icetSparseImageSetActualSize(image, data+RUN_LENGTH_SIZE);
+    /* Layered images have an additional run length field. */
+    if (icetSparseImageIsLayered(image)) {
+        ACTIVE_RUN_LENGTH_FRAGMENTS(data) = 0;
+        data_end = data+RUN_LENGTH_SIZE_LAYERED;
+    } else {
+        data_end = data+RUN_LENGTH_SIZE;
+    }
+
+    icetSparseImageSetActualSize(image, data_end);
 }
 
 void icetSetColorFormat(IceTEnum color_format)
