@@ -913,6 +913,19 @@ IceTImage icetCompositeImageLayered(const IceTVoid *fragment_buffer,
 
     icetRaiseDebug("In icetCompositeImageLayered");
 
+    /* Check whether it makes sense to use layered rather than regular
+     * compositing. */
+    {
+        IceTEnum composite_mode;
+        icetGetEnumv(ICET_COMPOSITE_MODE, &composite_mode);
+
+        if (composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
+            icetRaiseWarning(ICET_INVALID_OPERATION,
+                             "There is no reason to use layered compositing "
+                             "with commutative operators.");
+        }
+    }
+
     icetGetIntegerv(ICET_GLOBAL_VIEWPORT, global_viewport);
 
     icetStateSetBoolean(ICET_PRE_RENDERED, ICET_TRUE);
