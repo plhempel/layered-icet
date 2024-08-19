@@ -21,15 +21,18 @@
  *      CT_COLOR_FORMAT - color format IceTEnum for input and output
  *      CT_DEPTH_FORMAT - depth format IceTEnum for input and output
  *      CT_PIXEL_COUNT - the number of pixels in the original image (or a
- *              variable holding it.
- *      CT_RUN_LENGTH_SIZE - the number of bytes per run length block.
- *      CT_TEST_PIXEL(out) - sets `out` to `ICET_TRUE` if the current pixel is
+ *              variable holding it).
+ *     *CT_RUN_LENGTH_SIZE - the number of `IceTRunLengthType` lengths per run.
+ *              Should be either `RUN_LENGTH_SIZE` or `RUN_LENGTH_SIZE_LAYERED`.
+ *     *CT_TEST_PIXEL(out) - sets `out` to `ICET_TRUE` if the current pixel is
  *              active and `ICET_FALSE` if it is not.
- *      CT_WRITE_PIXEL_IF_ACTIVE(pointer, out_is_active) - If the current pixel
+ *     *CT_WRITE_PIXEL_IF_ACTIVE(pointer, out_is_active) - If the current pixel
  *              is active, writes the pixel to the pointer, increments the
- *              pointer and sets `out_is_active` to `ICET_TRUE`. Otherwise sets
- *              `out_is_active` to `ICET_FALSE`. The input value of
- *              `out_is_active` is ignored.
+ *              pointer and sets `out_is_active` to `ICET_TRUE`.  Otherwise sets
+ *              `out_is_active` to `ICET_FALSE`.  The previous value of
+ *              `out_is_active` is ignored.  If `CT_ACTIVE_FRAGS` is defined,
+ *              adds the number of active fragments at this pixel to the
+ *              accumulator.
  *      CT_INCREMENT_PIXEL() - Increments to the next input pixel.
  *
  * The following macros are optional:
@@ -37,10 +40,17 @@
  *              around the file.  If defined, then CT_SPACE_BOTTOM,
  *              CT_SPACE_TOP, CT_SPACE_LEFT, CT_SPACE_RIGHT, CT_FULL_WIDTH,
  *              and CT_FULL_HEIGHT must all also be defined.
+ *     *CT_ACTIVE_FRAGS - If defined, must contain the name of a variable which
+ *              will be used to accumulate the number of active fragments in a
+ *              run.  This number will then be stored as part of the run length.
+ *              Therefore, it should only be used in with `CT_RUN_LENGTH_SIZE`
+ *              == `RUN_LENGTH_SIZE_LAYERED`.
  *
- * All of the above macros are undefined at the end of this file.
+ * All of the above macros are undefined at the end of this file, unless their
+ * name is directly preceded by an asterisk.
  */
 
+/* Check for required macros. */
 #ifndef CT_COMPRESSED_IMAGE
 #error Need CT_COMPRESSED_IMAGE macro.  Is this included in image.c?
 #endif
@@ -53,6 +63,9 @@
 #ifndef CT_PIXEL_COUNT
 #error Need CT_PIXEL_COUNT macro.  Is this included in image.c?
 #endif
+#ifndef CT_RUN_LENGTH_SIZE
+#error Need CT_RUN_LENGTH_SIZE macro.  Is this included in image.c?
+#endif
 #ifndef ICET_IMAGE_DATA
 #error Need ICET_IMAGE_DATA macro.  Is this included in image.c?
 #endif
@@ -62,8 +75,11 @@
 #ifndef ACTIVE_RUN_LENGTH
 #error Need ACTIVE_RUN_LENGTH macro.  Is this included in image.c?
 #endif
-#ifndef CT_RUN_LENGTH_SIZE
-#error Need CT_RUN_LENGTH_SIZE macro.  Is this included in image.c?
+
+#ifdef CT_ACTIVE_FRAGS
+#ifndef ACTIVE_RUN_LENGTH_FRAGMENTS
+#error Need ACTIVE_RUN_LENGTH_FRAGMENTS macro.  Is this included in image.c?
+#endif
 #endif
 
 #ifdef _MSC_VER
@@ -99,6 +115,7 @@
             _count += CT_SPACE_LEFT;
             while (ICET_TRUE) {
                 IceTVoid *_runlengths;
+                /* Count background pixels. */
                 while (_x < _lastx) {
                     IceTBoolean _is_active;
                     CT_TEST_PIXEL(_is_active);
@@ -115,6 +132,7 @@
 #ifdef DEBUG
                 _totalcount += _count;
 #endif
+                /* Count and store active pixels. */
                 _count = 0;
                 while (_x < _lastx) {
                     IceTBoolean _is_active;
@@ -126,10 +144,14 @@
                     _x++;
                 }
                 ACTIVE_RUN_LENGTH(_runlengths) = _count;
-#ifdef CT_FRAG_COUNT
-                ACTIVE_RUN_LENGTH_FRAGMENTS(_runlengths) = CT_FRAG_COUNT;
-                CT_FRAG_COUNT = 0;
+
+/* Optionally store the number of active fragments, which may differ from the
+ * number of active pixels for layered images. */
+#ifdef CT_ACTIVE_FRAGS
+                ACTIVE_RUN_LENGTH_FRAGMENTS(_runlengths) = CT_ACTIVE_FRAGS;
+                CT_ACTIVE_FRAGS = 0;
 #endif
+
 #ifdef DEBUG
                 _totalcount += _count;
 #endif
@@ -173,10 +195,14 @@
                 _p++;
             }
             ACTIVE_RUN_LENGTH(_runlengths) = _count;
-#ifdef CT_FRAG_COUNT
-            ACTIVE_RUN_LENGTH_FRAGMENTS(_runlengths) = CT_FRAG_COUNT;
-            CT_FRAG_COUNT = 0;
+
+/* Optionally store the number of active fragments, which may differ from the
+ * number of active pixels for layered images. */
+#ifdef CT_ACTIVE_FRAGS
+            ACTIVE_RUN_LENGTH_FRAGMENTS(_runlengths) = CT_ACTIVE_FRAGS;
+            CT_ACTIVE_FRAGS = 0;
 #endif
+
 #ifdef DEBUG
             _totalcount += _count;
 #endif

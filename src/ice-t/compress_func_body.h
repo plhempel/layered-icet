@@ -116,13 +116,33 @@
 #endif /*DEBUG*/
 
     if (!icetImageIsLayered(INPUT_IMAGE)) {
+        /* Non-layered input images always produce non-layered output images. */
         if (icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
             icetRaiseError(ICET_INVALID_VALUE,
                 "Compression expected a non-layered output image.");
         }
 
-#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE
-#define CT_TEST_PIXEL(out) out = CT_ACTIVE();
+/* To support layered images, `compress_template_body.h` had to be slightly
+ * modified.  The following macros adapt the existing template implementations
+ * to the new interface.  Since they are identical for all composite modes and
+ * image formats, the macros are not undefined by the template body.
+ */
+
+/* Since pixels have a fixed size, there is no need to separately count active
+ * fragments.
+ */
+#undef CT_ACTIVE_FRAGS
+#define CT_RUN_LENGTH_SIZE  RUN_LENGTH_SIZE
+
+/* To allow for more complex control flow, the active pixel test is now a
+ * statement that sets an output variable, rather than an expression.
+ */
+#define CT_TEST_PIXEL(out)  out = CT_ACTIVE();
+
+/* Checking whether a pixel is active and copying it to the output buffer if so
+ * are now combined.  This is useful for layered images, where it avoids the
+ * need to check each fragment twice.
+ */
 #define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)   \
 {                                                       \
     CT_TEST_PIXEL(out_is_active);                       \
@@ -131,6 +151,10 @@
         CT_WRITE_PIXEL(dest);                           \
     }                                                   \
 }
+
+/* With the above macros in place, the existing template instantiations can
+ * remain unchanged.
+ */
 
     if (_composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
         if (_depth_format == ICET_IMAGE_DEPTH_FLOAT) {
@@ -429,22 +453,32 @@
                        "Encountered invalid composite mode 0x%X.",
                        _composite_mode);
     }
+
+/* Undefine macros common to all non-layered cases. */
+#undef CT_RUN_LENGTH_SIZE
 #undef CT_TEST_PIXEL
 #undef CT_WRITE_PIXEL_IF_ACTIVE
-    } else { /* Input image is layererd. */
+    } else { /* Input image is layered. */
         const IceTSizeType _num_layers =
             icetLayeredImageGetHeader(INPUT_IMAGE)->num_layers;
 
-        switch (_depth_format) {
-        case ICET_IMAGE_DEPTH_FLOAT:
-            switch (_composite_mode) {
-            case ICET_COMPOSITE_MODE_Z_BUFFER:
-                if (icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
-                    icetRaiseError(ICET_INVALID_VALUE,
-                        "Compression expected a non-layered output image.");
-                    break;
-                }
+        switch (_composite_mode) {
+        /* When only the closest fragment of each pixel is kept, the output
+         * image can simply use the non-layered format. */
+        case ICET_COMPOSITE_MODE_Z_BUFFER:
+            if (icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
+                icetRaiseError(ICET_INVALID_VALUE,
+                    "Compression expected a non-layered output image.");
+                break;
+            }
 
+/* Since the output image is non-layered, use the regular run length format. */
+#undef CT_ACTIVE_FRAGS
+#define CT_RUN_LENGTH_SIZE  RUN_LENGTH_SIZE
+
+/* A pixel is active if it contains at least one active fragment.  A fragment is
+ * active if its depth is less than the background value of one.
+ */
 #define CT_TEST_PIXEL(out)                                          \
 {                                                                   \
     out = ICET_FALSE;                                               \
@@ -456,6 +490,12 @@
         }                                                           \
     }                                                               \
 }
+
+/* Perform the same check as `CT_TEST_PIXEL`, but copy the first active fragment
+ * found to the output buffer.  Since the active fragments of a layered image
+ * must be sorted front to back per pixel, the closest one is always found
+ * first.
+ */
 #define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)               \
 {                                                                   \
     out_is_active = ICET_FALSE;                                     \
@@ -470,6 +510,9 @@
     }                                                               \
 }
 
+            /* Instantiate template for all possible fragment formats. */
+            switch (_depth_format) {
+            case ICET_IMAGE_DEPTH_FLOAT:
                 switch (_color_format) {
                 case ICET_IMAGE_COLOR_NONE:
 #define CTL_FRAGMENT_FORMAT D32F
@@ -493,24 +536,47 @@
 
                 default:
                     icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                                   "Encountered invalid color format 0x%X.",
+                                   "Encountered invalid color format %#X.",
                                    _color_format);
                 }
+                break; /* case ICET_IMAGE_DEPTH_FLOAT */
 
+            case ICET_IMAGE_DEPTH_NONE:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Layered images must contain depth information.");
+                break;
+
+            default:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Encountered invalid depth format %#X.",
+                               _depth_format);
+            } /* end switch (_depth_format) */
+
+/* Undefine macros common to composite mode "z buffer". */
 #undef CT_RUN_LENGTH_SIZE
 #undef CT_TEST_PIXEL
 #undef CT_WRITE_PIXEL_IF_ACTIVE
-                break; /* case ICET_COMPOSITE_MODE_Z_BUFFER */
+            break; /* case ICET_COMPOSITE_MODE_Z_BUFFER */
 
-            case ICET_COMPOSITE_MODE_BLEND:
-                if (!icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
-                    icetRaiseError(ICET_INVALID_VALUE,
-                        "Compression expected a layered output image.");
-                    break;
-                }
+        case ICET_COMPOSITE_MODE_BLEND:
+            /* The over-operator is non-commutative, so it can only be applied
+             * once fragments have been collected from all ranks.  Until then,
+             * all fragments must be stored separately in a layered image. */
+            if (!icetSparseImageIsLayered(OUTPUT_SPARSE_IMAGE)) {
+                icetRaiseError(ICET_INVALID_VALUE,
+                    "Compression expected a layered output image.");
+                break;
+            }
 
-#define CT_FRAG_COUNT _frag_count
-#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
+/* Track and store the number of active fragments in each run, since there is no
+ * fixed number of fragments per pixel.
+ */
+#define CT_ACTIVE_FRAGS     _active_frags
+#define CT_RUN_LENGTH_SIZE  RUN_LENGTH_SIZE_LAYERED
+
+/* A pixel is active if it contains at least one active fragment.  A fragment is
+ * active if it is not completely transparent (i.e. alpha > 0).
+ */
 #define CT_TEST_PIXEL(out)                                          \
 {                                                                   \
     out = ICET_FALSE;                                               \
@@ -522,13 +588,23 @@
         }                                                           \
     }                                                               \
 }
+
+/* Perform the same check as `CT_TEST_PIXEL`, but copy all active fragments
+ * found to the output buffer, preceded by the number of active fragments unless
+ * the pixel is inactive.  Also add the number of active fragments to the
+ * per-run total.
+ */
 #define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)               \
 {                                                                   \
+    /* Count active fragments. */                                   \
     IceTLayerCount pixel_size = 0;                                  \
-    IceTLayerCount *const pixel_size_out = (IceTLayerCount *)dest;  \
                                                                     \
+    /* Leave room to store the number of active fragments and       \
+     * remember the location. */                                    \
+    IceTLayerCount *const pixel_size_out = (IceTLayerCount *)dest;  \
     dest += sizeof(IceTLayerCount);                                 \
                                                                     \
+    /* Check all fragments and copy the active ones. */             \
     for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
         if (_fragment[layer].color[3] != 0) {                       \
             *(CTL_FRAGMENT_TYPE *)dest = _fragment[layer];          \
@@ -538,15 +614,22 @@
     }                                                               \
                                                                     \
     if (pixel_size == 0) {                                          \
+        /* If the pixel is inactive, reclaim the space reserved to  \
+         * store the number of active fragments. */                 \
         dest = (IceTByte *)pixel_size_out;                          \
         out_is_active = ICET_FALSE;                                 \
     } else {                                                        \
+        /* Otherwise write the number of active fragments to the    \
+         * reserved location in the output buffer. */               \
         *pixel_size_out = pixel_size;                               \
-        _frag_count += pixel_size;                                  \
-        out_is_active = pixel_size = ICET_TRUE;                     \
+        CT_ACTIVE_FRAGS += pixel_size;                              \
+        out_is_active = ICET_TRUE;                                  \
     }                                                               \
 }
 
+            /* Instantiate template for all possible fragment formats. */
+            switch (_depth_format) {
+            case ICET_IMAGE_DEPTH_FLOAT:
                 switch (_color_format) {
                 case ICET_IMAGE_COLOR_RGBA_UBYTE:
 #define CTL_FRAGMENT_FORMAT RGBA8_D32F
@@ -566,34 +649,39 @@
 
                 default:
                     icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                                   "Encountered invalid color format 0x%X.",
+                                   "Encountered invalid color format %#X.",
                                    _color_format);
                 }
-#undef CT_FRAG_COUNT
+                break; /* case ICET_IMAGE_DEPTH_FLOAT */
+
+            case ICET_IMAGE_DEPTH_NONE:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Layered images must contain depth information.");
+                break;
+
+            default:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Encountered invalid depth format %#X.",
+                               _depth_format);
+            } /* end switch (_depth_format) */
+
+/* Undefine macros common to composite mode "blend". */
+#undef CT_ACTIVE_FRAGS
 #undef CT_RUN_LENGTH_SIZE
 #undef CT_TEST_PIXEL
 #undef CT_WRITE_PIXEL_IF_ACTIVE
-                break; /* case ICET_COMPOSITE_MODE_BLEND */
-            default:
-                icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                               "Encountered invalid composite mode 0x%X.",
-                               _composite_mode);
-            }
-            break; /* case ICET_IMAGE_DEPTH_FLOAT */
-
-        case ICET_IMAGE_DEPTH_NONE:
-            icetRaiseError(ICET_INVALID_VALUE,
-                           "Layered images must contain depth information.");
-            break;
-
+            break; /* case ICET_COMPOSITE_MODE_BLEND */
         default:
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                           "Encountered invalid depth format 0x%X.",
-                           _depth_format);
-        }
-    }
+                           "Encountered invalid composite mode %#X.",
+                           _composite_mode);
+        } /* end switch (_composite_mode) */
+    } /* end if (isLayered(INPUT_IMAGE)) */
 
     {
+        /* Calculate the size of an uncompressed image with the same dimensions
+         * as the compression result, which may be different from those of
+         * input image. */
         IceTSizeType uncompressed_size;
 
         if (icetImageIsLayered(INPUT_IMAGE)) {
@@ -616,6 +704,8 @@
                       / uncompressed_size ));
     }
 
+/* Optionally dump the compression result to a file for debugging.  For
+ * simplicity, this is done only by the first rank. */
 #ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
     if (icetCommRank() == 0) {
         icetSparseImageWriteToFile(OUTPUT_SPARSE_IMAGE,
