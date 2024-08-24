@@ -1,8 +1,8 @@
-/* This file instantiates the compression of layered images, defined in
+/* This file instantiates the compression of layered images, implemented in
  * `compress_template_body.h`, for a given fragment format.  The format must be
- * specified via the macro `CTL_FRAGMENT_FORMAT`, which is undefined at the end
- * of this file.  The file should only be included at the appropriate location
- * in `compress_func_body.h`.
+ * defined as `CTL_FRAGMENT_FORMAT`, which is undefined at the end of this file.
+ * The file should only be included at the appropriate locations in
+ * `compress_func_body.h`.
  */
 
 /* Check for required macros. */

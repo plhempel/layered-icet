@@ -83,6 +83,12 @@
         icetRaiseError(ICET_SANITY_CHECK_FAIL,
                        "Input/output buffers have different depth formats.");
     }
+    if (icetImageIsLayered(OUTPUT_IMAGE)) {
+        icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                       "Decompression always produces non-layered images.");
+        /* If the input image has multiple layers, they are blended together
+         * into a single color per pixel. */
+    }
 #ifdef PIXEL_COUNT
     if (_pixel_count  != PIXEL_COUNT) {
         icetRaiseError(ICET_SANITY_CHECK_FAIL,
@@ -100,6 +106,10 @@
                        "Offset pixels outside range of output image.");
     }
 #endif
+
+    if (!icetSparseImageIsLayered(INPUT_SPARSE_IMAGE)) {
+/* Non-layered images use the basic run length format. */
+#define DT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE
 
     if (_composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
         if (_depth_format == ICET_IMAGE_DEPTH_FLOAT) {
@@ -446,6 +456,103 @@
         icetRaiseError(ICET_SANITY_CHECK_FAIL,
                        "Encountered invalid composite mode.");
     }
+/* Undefine macros common to all non-layered cases. */
+#undef DT_RUN_LENGTH_SIZE
+    } else { /* Input image is layered. */
+/* Layered images have a specific run length format. */
+#define DT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE_LAYERED
+
+        switch (_composite_mode) {
+        /* When using a commutative compositing operator, The layers of each
+         * input image are already composited into a non-layered image during
+         * compression, so this point should never be reached.
+         */
+        case ICET_COMPOSITE_MODE_Z_BUFFER:
+            icetRaiseError(ICET_INVALID_OPERATION,
+                           "It does not make sense to use layered images with "
+                           "commutative compositing operators.");
+            break;
+
+        case ICET_COMPOSITE_MODE_BLEND:
+            /* Instantiate template for all possible fragment formats. */
+            switch (_depth_format) {
+            case ICET_IMAGE_DEPTH_FLOAT:
+                switch (_color_format) {
+                case ICET_IMAGE_COLOR_RGBA_UBYTE: {
+                    /* Get background color. */
+                    IceTUByte _background_color[4];
+                    IceTUByte *_color =
+                        (IceTUByte *)icetImageGetColorui(OUTPUT_IMAGE);
+
+#ifdef CORRECT_BACKGROUND
+                    icetGetIntegerv(ICET_TRUE_BACKGROUND_COLOR_WORD,
+                            (IceTInt *)&_background_color);
+#else
+                    icetGetIntegerv(ICET_BACKGROUND_COLOR_WORD,
+                            (IceTInt *)&_background_color);
+#endif
+
+/* Define macros depending on the fragment format and instantiate
+ * the implementation. */
+#define DTL_FRAGMENT_TYPE   IceTFragment_RGBA8_D32F
+#define DTL_OVER            ICET_OVER_UBYTE
+#include "decompress_template_body_layered.h"
+                    break;
+                }
+
+                /* The implementation for all other supported formats is
+                 * analogous. */
+
+                case ICET_IMAGE_COLOR_RGBA_FLOAT: {
+                        IceTFloat _background_color[4];
+                        IceTFloat *_color = icetImageGetColorf(OUTPUT_IMAGE);
+
+#ifdef CORRECT_BACKGROUND
+                        icetGetFloatv(ICET_TRUE_BACKGROUND_COLOR, _background_color);
+#else
+                        icetGetFloatv(ICET_BACKGROUND_COLOR, _background_color);
+#endif
+
+#define DTL_FRAGMENT_TYPE   IceTFragment_RGBA32F_D32F
+#define DTL_OVER            ICET_OVER_FLOAT
+#include "decompress_template_body_layered.h"
+                    break;
+                }
+
+                case ICET_IMAGE_COLOR_RGB_FLOAT:
+                case ICET_IMAGE_COLOR_NONE:
+                    icetRaiseError(ICET_INVALID_OPERATION,
+                                   "Blending requires a color format with an alpha channel.");
+                    break;
+
+                default:
+                    icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                                   "Encountered invalid color format %#X.",
+                                   _color_format);
+                }
+                break; /* case ICET_IMAGE_DEPTH_FLOAT */
+
+            case ICET_IMAGE_DEPTH_NONE:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Layered images must contain depth information.");
+                break;
+
+            default:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Encountered invalid depth format %#X.",
+                               _depth_format);
+            }
+            break; /* case ICET_COMPOSITE_MODE_BLEND */
+
+        default:
+            icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                           "Encountered invalid composite mode %#X.",
+                           _composite_mode);
+        }; /* end switch (_composite_mode) */
+
+/* Undefine macros common to all layered images. */
+#undef DT_RUN_LENGTH_SIZE
+    } /* end if (isLayered(INPUT_SPARSE_IMAGE)) */
 
 #ifdef TIME_DECOMPRESSION
     icetTimingCompressEnd();

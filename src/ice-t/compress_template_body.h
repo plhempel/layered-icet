@@ -22,8 +22,10 @@
  *      CT_DEPTH_FORMAT - depth format IceTEnum for input and output
  *      CT_PIXEL_COUNT - the number of pixels in the original image (or a
  *              variable holding it).
- *     *CT_RUN_LENGTH_SIZE - the number of `IceTRunLengthType` lengths per run.
- *              Should be either `RUN_LENGTH_SIZE` or `RUN_LENGTH_SIZE_LAYERED`.
+ *     *CT_RUN_LENGTH_SIZE - the number of `IceTRunLengthType` values stored per
+ *              run.  Should be either `RUN_LENGTH_SIZE` or
+ *              `RUN_LENGTH_SIZE_LAYERED`, depending on the format of the
+ *              compressed image.
  *     *CT_TEST_PIXEL(out) - sets `out` to `ICET_TRUE` if the current pixel is
  *              active and `ICET_FALSE` if it is not.
  *     *CT_WRITE_PIXEL_IF_ACTIVE(pointer, out_is_active) - If the current pixel
@@ -46,8 +48,8 @@
  *              Therefore, it should only be used in with `CT_RUN_LENGTH_SIZE`
  *              == `RUN_LENGTH_SIZE_LAYERED`.
  *
- * All of the above macros are undefined at the end of this file, unless their
- * name is directly preceded by an asterisk.
+ * All of the above macros not marked with an asterisk are undefined at the end
+ * of this file.
  */
 
 /* Check for required macros. */

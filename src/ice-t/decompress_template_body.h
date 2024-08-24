@@ -20,10 +20,15 @@
  *		increments the pointer.
  *	DT_INCREMENT_INACTIVE_PIXELS(count) - Increments over count pixels,
  *		setting them all to appropriate inactive values.
+ *	*DT_RUN_LENGTH_SIZE - the number of `IceTRunLengthType` values stored per
+ *		run.  Should be either `RUN_LENGTH_SIZE` or `RUN_LENGTH_SIZE_LAYERED`,
+ *		depending on the format of the compressed image.
  *
- * All of the above macros are undefined at the end of this file.
+ * All of the above macros not marked with an asterisk are undefined at the end
+ * of this file.
  */
 
+/* Check for required macros. */
 #ifndef ICET_IMAGE_DATA
 #error Need ICET_IMAGE_DATA macro.  Is this included in image.c?
 #endif
@@ -32,6 +37,18 @@
 #endif
 #ifndef ACTIVE_RUN_LENGTH
 #error Need ACTIVE_RUN_LENGTH macro.  Is this included in image.c?
+#endif
+#ifndef DT_COMPRESSED_IMAGE
+#error Need DT_COMPRESSED_IMAGE macro.  Is this included in image.c?
+#endif
+#ifndef DT_READ_PIXEL
+#error Need DT_READ_PIXEL macro.  Is this included in image.c?
+#endif
+#ifndef DT_INCREMENT_INACTIVE_PIXELS
+#error Need DT_INCREMENT_INACTIVE_PIXELS macro.  Is this included in image.c?
+#endif
+#ifndef DT_RUN_LENGTH_SIZE
+#error Need DT_RUN_LENGTH_SIZE macro.  Is this included in image.c?
 #endif
 
 {
@@ -49,7 +66,7 @@
 	IceTSizeType _rl;
 
         _runlengths = _src;
-        _src += RUN_LENGTH_SIZE;
+        _src += DT_RUN_LENGTH_SIZE;
 
       /* Set background pixels. */
 	_rl = INACTIVE_RUN_LENGTH(_runlengths);

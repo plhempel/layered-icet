@@ -2757,12 +2757,7 @@ static IceTSparseImage getCompressedRenderedBufferImage(
                             tile_height,
                             sparseImage);
 
-    if (icetImageIsLayered(rendered_image)) {
-        exit(EXIT_SUCCESS);
-    }
-    else {
-        return sparseImage;
-    }
+    return sparseImage;
 }
 
 void icetCompressImage(const IceTImage image,
