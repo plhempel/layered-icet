@@ -20,15 +20,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* If defined, the result of every image compression will be written to the path
- * given by the define for debugging purposes.
- */
-#ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
-#include <IceTDevCommunication.h>
-
-#include <stdio.h>
-#endif
-
 #define ICET_IMAGE_MAGIC_NUM            (IceTEnum)0x004D5000
 #define ICET_IMAGE_POINTERS_MAGIC_NUM   (IceTEnum)0x004D5100
 #define ICET_SPARSE_IMAGE_MAGIC_NUM     (IceTEnum)0x004D6000
@@ -874,23 +865,6 @@ IceTBoolean icetSparseImageIsLayered(const IceTSparseImage image)
     return ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
         & ICET_IMAGE_FLAG_LAYERED;
 }
-
-#ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
-/* Store the used part of an IceTSparseImage's buffer in a file as binary. */
-static void icetSparseImageWriteToFile(const IceTSparseImage image,
-                                       const char *filename)
-{
-    /* Open the file in binary mode, creating it if necessary. */
-    FILE *const file = fopen(filename, "wb");
-    /* Store only the part of the buffer that has actually been written to. */
-    fwrite(image.opaque_internals,
-           sizeof(IceTUByte),
-           icetSparseImageGetCompressedBufferSize(image),
-           file);
-    /* Flush and close the stream. */
-    fclose(file);
-}
-#endif
 
 void icetImageAdjustForOutput(IceTImage image)
 {
@@ -1931,7 +1905,8 @@ IceTSparseImage icetSparseImageUnpackageFromReceive(IceTVoid *buffer)
     image.opaque_internals = buffer;
 
   /* Check the image for validity. */
-    if (    ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+    if (   (ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+            & ~ICET_IMAGE_FLAG_LAYERED)
          != ICET_SPARSE_IMAGE_MAGIC_NUM ) {
         icetRaiseError(ICET_INVALID_VALUE,
                        "Invalid image buffer: no magic number.");
@@ -1961,7 +1936,8 @@ IceTSparseImage icetSparseImageUnpackageFromReceive(IceTVoid *buffer)
         return image;
     }
 
-    if (   icetSparseImageBufferSizeType(color_format, depth_format,
+    if (!icetSparseImageIsLayered(image) &&
+           icetSparseImageBufferSizeType(color_format, depth_format,
                                          icetSparseImageGetWidth(image),
                                          icetSparseImageGetHeight(image))
          < ICET_IMAGE_HEADER(image)[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX] ) {

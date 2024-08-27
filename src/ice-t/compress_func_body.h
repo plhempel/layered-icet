@@ -703,15 +703,6 @@
             100.0f - (  100.0f*icetSparseImageGetCompressedBufferSize(OUTPUT_SPARSE_IMAGE)
                       / uncompressed_size ));
     }
-
-/* Optionally dump the compression result to a file for debugging.  For
- * simplicity, this is done only by the first rank. */
-#ifdef ICET_COMPRESSED_IMAGE_OUT_FILE
-    if (icetCommRank() == 0) {
-        icetSparseImageWriteToFile(OUTPUT_SPARSE_IMAGE,
-                                   ICET_COMPRESSED_IMAGE_OUT_FILE);
-    }
-#endif
 }
 
 #undef INPUT_IMAGE
