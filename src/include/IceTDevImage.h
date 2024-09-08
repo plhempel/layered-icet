@@ -66,21 +66,23 @@ ICET_EXPORT IceTImage icetImagePointerAssignBuffer(IceTVoid *buffer,
                                                    const IceTVoid *color_buf,
                                                    const IceTVoid *depth_buf);
 
-/* Given the fragment buffer of an existing layered image with `num_layers`
- * fragments per pixel, create an `IceTImage` storing its metadata and a pointer
- * to the fragment buffer, then assign the image to a state variable.
+/* Given the color and depth buffer of an existing layered image with
+ * `num_layers` fragments per pixel, create an `IceTImage` storing its metadata
+ * and a pointer to the buffers, then assign the image to a state variable.
  */
 ICET_EXPORT IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
                                                       IceTSizeType width,
                                                       IceTSizeType height,
                                                       IceTLayerCount num_layers,
-                                                      const IceTVoid *fragment_buffer);
+                                                      const IceTVoid *color_buffer,
+                                                      const IceTVoid *depth_buffer);
 ICET_EXPORT IceTSizeType icetLayeredImagePointerBufferSize(void);
 ICET_EXPORT IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
                                                           IceTSizeType width,
                                                           IceTSizeType height,
                                                           IceTLayerCount num_layers,
-                                                          const IceTVoid *fragment_buffer);
+                                                          const IceTVoid *color_buffer,
+                                                          const IceTVoid *deoth_buffer);
 
 /* Check whether an `IceTImage` is layered, meaning that it may have multiple
  * fragments per pixel, with each fragment consisting of a color and a depth.
@@ -89,6 +91,7 @@ ICET_EXPORT IceTBoolean icetImageIsLayered(const IceTImage image);
 
 ICET_EXPORT void icetImageAdjustForOutput(IceTImage image);
 ICET_EXPORT void icetImageAdjustForInput(IceTImage image);
+/* For layered images, the number of layers remains unchanged. */
 ICET_EXPORT void icetImageSetDimensions(IceTImage image,
                                         IceTSizeType width,
                                         IceTSizeType height);
@@ -102,12 +105,6 @@ ICET_EXPORT IceTVoid *icetImageGetDepthVoid(IceTImage image,
 ICET_EXPORT const IceTVoid *icetImageGetDepthConstVoid(
                                                       const IceTImage image,
                                                       IceTSizeType *pixel_size);
-
-/* Read-only, untyped access to the fragments of a layered image.
- * Prefer using the appropriate typed function
- * `icetLayeredImageGetFragmentsConst_*`, defined in `image.c`, where possible.
- */
-ICET_EXPORT const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image);
 
 ICET_EXPORT IceTBoolean icetImageEqual(const IceTImage image1,
                                        const IceTImage image2);
@@ -182,6 +179,7 @@ ICET_EXPORT IceTSizeType icetSparseImageGetWidth(const IceTSparseImage image);
 ICET_EXPORT IceTSizeType icetSparseImageGetHeight(const IceTSparseImage image);
 ICET_EXPORT IceTSizeType icetSparseImageGetNumPixels(
                                                    const IceTSparseImage image);
+/* For layered images, the maximum number of layers remains unchanged. */
 ICET_EXPORT void icetSparseImageSetDimensions(IceTSparseImage image,
                                               IceTSizeType width,
                                               IceTSizeType height);

@@ -256,11 +256,12 @@ ICET_EXPORT IceTImage icetCompositeImage(const IceTVoid *color_buffer,
                                          const IceTDouble *modelview_matrix,
                                          const IceTFloat *background_color);
 
-/* Composite pre-rendered images with multiple layers of fragments, i.e.
- * color-depth pairs, per pixel into a regular 2D image.  Active (non-empty,
- * non-background) fragments must be sorted front to back per pixel.
+/* Composite pre-rendered images with multiple color and depth values per pixel
+ * into a regular 2D image.  Active (non-empty, non-background) fragments must
+ * be sorted front to back per pixel.
  */
-ICET_EXPORT IceTImage icetCompositeImageLayered(const IceTVoid *fragment_buffer,
+ICET_EXPORT IceTImage icetCompositeImageLayered(const IceTVoid *color_buffer,
+                                                const IceTVoid *depth_buffer,
                                                 IceTInt num_layers,
                                                 const IceTInt *valid_pixels_viewport,
                                                 const IceTDouble *projection_matrix,

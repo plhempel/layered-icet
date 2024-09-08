@@ -24,8 +24,7 @@
 #define ICET_IMAGE_POINTERS_MAGIC_NUM   (IceTEnum)0x004D5100
 #define ICET_SPARSE_IMAGE_MAGIC_NUM     (IceTEnum)0x004D6000
 /* Flag combined with another magic number to indicate that an image has a
- * layered format, allowing for multiple fragments (color-depth pairs) per
- * pixel.
+ * layered format, allowing for multiple color and depth values per pixel.
  */
 #define ICET_IMAGE_FLAG_LAYERED         (IceTEnum)0x00000001
 
@@ -44,19 +43,22 @@
 
 /* In addition to the regular header, layered images have a nested sub-header
  * at the start of their data containing metadata specific to layered images.
- * Fragments are stored after the sub-header either directly in the image buffer
- * or referenced by a pointer, just like in non-layered images.
+ * Color and depth are stored after the sub-header either directly in the image
+ * buffer or through pointers, just like in non-layered images.
  */
 typedef struct IceTLayeredImageHeader {
     IceTLayerCount num_layers;
 } IceTLayeredImageHeader;
+
 typedef struct IceTLayeredImageBufferData {
     IceTLayeredImageHeader header;
-    IceTUByte fragments[];
+    IceTUByte data[];
 } IceTLayeredImageBufferData;
+
 typedef struct IceTLayeredImagePointerData {
     IceTLayeredImageHeader header;
-    const IceTVoid *fragments;
+    const IceTVoid *color_buffer;
+    const IceTVoid *depth_buffer;
 } IceTLayeredImagePointerData;
 
 typedef IceTUnsignedInt32 IceTRunLengthType;
@@ -80,6 +82,7 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
                 ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
         /* Allow both layered and non-layered images by ignoring the flag. */
         IceTEnum base_magic_num = magic_num & ~ICET_IMAGE_FLAG_LAYERED;
+
         if (   (base_magic_num != ICET_IMAGE_MAGIC_NUM)
             && (base_magic_num != ICET_IMAGE_POINTERS_MAGIC_NUM) ) {
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
@@ -88,19 +91,32 @@ static void ICET_TEST_IMAGE_HEADER(IceTImage image)
         }
     }
 }
+
 /* Check whether an `IceTImage` has a valid magic number indicating a layered
  * format with multiple fragments per pixel.
  */
 static void ICET_TEST_LAYERED_IMAGE_HEADER(IceTImage image)
 {
-    ICET_TEST_IMAGE_HEADER(image);
+    IceTEnum magic_num;
 
-    if (!icetImageIsLayered(image)) {
+    if (icetImageIsNull(image)) {
+        return;
+    }
+
+    magic_num = ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
+
+    switch (magic_num) {
+    case ICET_IMAGE_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+    case ICET_IMAGE_POINTERS_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        /* Valid layered format. */
+        return;
+    default:
         icetRaiseError(ICET_SANITY_CHECK_FAIL,
-            "Expected layered image, got non-layered type 0x%X.",
-            ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]);
+                       "Expected layered image, got magic number %#X",
+                       magic_num);
     }
 }
+
 static void ICET_TEST_SPARSE_IMAGE_HEADER(IceTSparseImage image)
 {
     if (!icetSparseImageIsNull(image)) {
@@ -374,7 +390,7 @@ IceTSizeType icetLayeredImageBufferSizeType(IceTEnum color_format,
         colorPixelSize(color_format) + depthPixelSize(depth_format);
 
     return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)  /* Common header. */
-            + sizeof(IceTLayeredImageBufferData)            /* Layered image sub-header. */
+            + sizeof(IceTLayeredImageHeader)                /* Layered image sub-header. */
             + width*height*num_layers*fragment_size);       /* Fragments. */
 }
 
@@ -387,7 +403,7 @@ IceTSizeType icetImagePointerBufferSize(void)
 IceTSizeType icetLayeredImagePointerBufferSize(void)
 {
     return (  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTUInt)  /* Common header. */
-            + sizeof(IceTLayeredImagePointerData));         /* Sub-header and pointer. */
+            + sizeof(IceTLayeredImagePointerData));         /* Sub-header and pointers. */
 }
 
 IceTSizeType icetSparseImageBufferSize(IceTSizeType width, IceTSizeType height)
@@ -516,7 +532,8 @@ IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
                                           IceTSizeType width,
                                           IceTSizeType height,
                                           IceTLayerCount num_layers,
-                                          const IceTVoid *fragment_buffer)
+                                          const IceTVoid *color_buffer,
+                                          const IceTVoid *depth_buffer)
 {
     IceTVoid *buffer;
     IceTSizeType buffer_size;
@@ -525,7 +542,7 @@ IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
     buffer = icetGetStateBuffer(pname, buffer_size);
 
     return icetLayeredImagePointerAssignBuffer(
-                buffer, width, height, num_layers, fragment_buffer);
+        buffer, width, height, num_layers, color_buffer, depth_buffer);
 }
 
 IceTImage icetImageAssignBuffer(IceTVoid *buffer,
@@ -639,7 +656,8 @@ IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
                                               IceTSizeType width,
                                               IceTSizeType height,
                                               IceTLayerCount num_layers,
-                                              const IceTVoid *fragment_buffer)
+                                              const IceTVoid *color_buffer,
+                                              const IceTVoid *depth_buffer)
 {
     /* Set common header fields. */
     IceTImage image = icetImageAssignBuffer(buffer, width, height);
@@ -654,23 +672,36 @@ IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
         header[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX] = -1;
     }
 
+    /* Check color buffer. */
+    if (icetImageGetColorFormat(image) == ICET_IMAGE_COLOR_NONE) {
+        if (color_buffer != NULL) {
+            icetRaiseError(
+                ICET_INVALID_VALUE,
+                "Given a color buffer when color format is set to none.");
+        }
+    } else {
+        if (color_buffer == NULL) {
+            icetRaiseError(
+                ICET_INVALID_VALUE,
+                "Not given a color buffer when color format requires one.");
+        }
+    }
+
     /* Check that there is depth information. */
     if (icetImageGetDepthFormat(image) == ICET_IMAGE_DEPTH_NONE) {
             icetRaiseError(ICET_INVALID_VALUE,
                            "Layered images must contain depth information.");
     }
-
-    /* Check that there is a fragment buffer. */
-    if (fragment_buffer == NULL) {
-        icetRaiseError(ICET_INVALID_VALUE,
-                       "Layered images must have a fragment buffer.");
+    if (depth_buffer == NULL) {
+        icetRaiseError(ICET_INVALID_VALUE, "Missing depth buffer.");
     }
 
     /* Set sub-header and data. */
     {
         IceTLayeredImagePointerData *data = ICET_IMAGE_DATA(image);
         data->header.num_layers = num_layers;
-        data->fragments = fragment_buffer;
+        data->color_buffer = color_buffer;
+        data->depth_buffer = depth_buffer;
     }
 
     return image;
@@ -694,7 +725,7 @@ IceTBoolean icetImageIsNull(const IceTImage image)
 
 IceTBoolean icetImageIsLayered(const IceTImage image)
 {
-    return ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+    return  ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
         & ICET_IMAGE_FLAG_LAYERED;
 }
 
@@ -862,7 +893,7 @@ IceTBoolean icetSparseImageIsNull(const IceTSparseImage image)
 
 IceTBoolean icetSparseImageIsLayered(const IceTSparseImage image)
 {
-    return ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
+    return  ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
         & ICET_IMAGE_FLAG_LAYERED;
 }
 
@@ -873,6 +904,10 @@ void icetImageAdjustForOutput(IceTImage image)
     if (icetImageIsNull(image)) return;
 
     ICET_TEST_IMAGE_HEADER(image);
+
+    /* Output images are never layered. */
+    ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX] &=
+        ~ICET_IMAGE_FLAG_LAYERED;
 
     if (icetIsEnabled(ICET_COMPOSITE_ONE_BUFFER)) {
         color_format = icetImageGetColorFormat(image);
@@ -941,7 +976,7 @@ IceTSizeType icetImageGetNumPixels(const IceTImage image)
             * ICET_IMAGE_HEADER(image)[ICET_IMAGE_HEIGHT_INDEX] );
 }
 
-const IceTLayeredImageHeader *icetLayeredImageGetHeader(const IceTImage image)
+const IceTLayeredImageHeader *icetLayeredImageGetHeaderConst(const IceTImage image)
 {
     ICET_TEST_LAYERED_IMAGE_HEADER(image);
     if (!image.opaque_internals) return 0;
@@ -1011,13 +1046,24 @@ void icetImageSetDimensions(IceTImage image,
 
     ICET_IMAGE_HEADER(image)[ICET_IMAGE_WIDTH_INDEX] = (IceTInt)width;
     ICET_IMAGE_HEADER(image)[ICET_IMAGE_HEIGHT_INDEX] = (IceTInt)height;
-    if (   ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
-        == ICET_IMAGE_MAGIC_NUM) {
+
+    switch (ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]) {
+    case ICET_IMAGE_MAGIC_NUM:
         ICET_IMAGE_HEADER(image)[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX]
               = (IceTInt)icetImageBufferSizeType(icetImageGetColorFormat(image),
                                                  icetImageGetDepthFormat(image),
                                                  width,
                                                  height);
+        break;
+    case ICET_IMAGE_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        ICET_IMAGE_HEADER(image)[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX]
+            = (IceTInt)icetLayeredImageBufferSizeType(
+                icetImageGetColorFormat(image),
+                icetImageGetDepthFormat(image),
+                width,
+                height,
+                icetLayeredImageGetHeaderConst(image)->num_layers);
+        break;
     }
 }
 
@@ -1072,22 +1118,24 @@ const IceTVoid *icetImageGetColorConstVoid(const IceTImage image,
     if (pixel_size) {
         IceTEnum color_format = icetImageGetColorFormat(image);
         *pixel_size = colorPixelSize(color_format);
+
+        if (icetImageIsLayered(image)) {
+            *pixel_size *= icetLayeredImageGetHeaderConst(image)->num_layers;
+        }
     }
 
     switch (magic_number) {
     case ICET_IMAGE_MAGIC_NUM:
         return ICET_IMAGE_DATA(image);
+    case ICET_IMAGE_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        return ((IceTLayeredImageBufferData *)ICET_IMAGE_DATA(image))->data;
     case ICET_IMAGE_POINTERS_MAGIC_NUM:
         return ((const IceTVoid **)ICET_IMAGE_DATA(image))[0];
+    case ICET_IMAGE_POINTERS_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        return ((IceTLayeredImagePointerData *)ICET_IMAGE_DATA(image))->color_buffer;
     default:
-        if (magic_number & ICET_IMAGE_FLAG_LAYERED) {
-            icetRaiseError(ICET_INVALID_OPERATION,
-                "Layered images do not have a separate color buffer.");
-        }
-        else {
-            icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                           "Detected invalid image header.");
-        }
+        icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                       "Detected invalid image header.");
         return NULL;
     }
 }
@@ -1195,17 +1243,27 @@ const IceTVoid *icetImageGetDepthConstVoid(const IceTImage image,
 
         return image_data_pointer + color_format_bytes;
     }
+    case ICET_IMAGE_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+    {
+        const IceTLayeredImageBufferData *layered_data = ICET_IMAGE_DATA(image);
+        IceTSizeType color_format_bytes = (  icetImageGetNumPixels(image)
+                                           * colorPixelSize(color_format)
+                                           * layered_data->header.num_layers);
+
+        /* Cast to IceTByte to ensure pointer arithmetic is correct. */
+        const IceTByte *image_data_pointer =
+                (const IceTByte*)(layered_data->data);
+
+        return image_data_pointer + color_format_bytes;
+    }
     case ICET_IMAGE_POINTERS_MAGIC_NUM:
         return ((const IceTVoid **)ICET_IMAGE_DATA(image))[1];
+    case ICET_IMAGE_POINTERS_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
+        return ((IceTLayeredImagePointerData *)ICET_IMAGE_DATA(image))->depth_buffer;
     default:
-        if (magic_number & ICET_IMAGE_FLAG_LAYERED) {
-            icetRaiseError(ICET_INVALID_OPERATION,
-                "Layered images do not have a separate depth buffer.");
-        } else {
-            icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                           "Detected invalid image header (magic_num = 0x%X).",
-                           magic_number);
-        }
+        icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                       "Detected invalid image header (magic_num = 0x%X).",
+                       magic_number);
         return NULL;
     }
 }
@@ -1251,24 +1309,6 @@ IceTFloat *icetImageGetDepthf(IceTImage image)
     return icetImageGetDepthVoid(image, NULL);
 }
 
-const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image)
-{
-    const IceTEnum magic_number =
-        ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX];
-
-    switch (magic_number) {
-    case ICET_IMAGE_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
-        return ((IceTLayeredImageBufferData*)ICET_IMAGE_DATA(image))->fragments;
-    case ICET_IMAGE_POINTERS_MAGIC_NUM | ICET_IMAGE_FLAG_LAYERED:
-        return ((IceTLayeredImagePointerData*)ICET_IMAGE_DATA(image))->fragments;
-    default:
-        icetRaiseError(ICET_INVALID_OPERATION,
-            "Cannot get layered fragments from image of type %#X.",
-            magic_number);
-        return NULL;
-    }
-}
-
 /* In a layered image, each pixel may contain multiple fragments, each made up
  * of a depth value and optionally a color.
  * For every combination of color and depth format, define a fragment type and
@@ -1284,34 +1324,12 @@ const IceTVoid *icetLayeredImageGetFragmentsConstVoid(const IceTImage image)
     typedef struct IceTFragment_##format {                                      \
         color_type color[color_channels];                                       \
         depth_type depth;                                                       \
-    } IceTFragment_##format;                                                    \
-                                                                                \
-    const IceTFragment_##format *icetLayeredImageGetFragmentsConst_##format(    \
-            const IceTImage image) {                                            \
-        const IceTEnum image_color_format = icetImageGetColorFormat(image);     \
-        const IceTEnum image_depth_format = icetImageGetDepthFormat(image);     \
-                                                                                \
-        if (image_color_format != color_format) {                               \
-            icetRaiseError(ICET_INVALID_OPERATION,                              \
-                "Expected color format " #color_format " (%#X), got %#X.",      \
-                color_format, image_color_format);                              \
-            return NULL;                                                        \
-        }                                                                       \
-                                                                                \
-        if (image_depth_format != depth_format) {                               \
-            icetRaiseError(ICET_INVALID_OPERATION,                              \
-                "Expected depth format " #depth_format " (%#X), got %#X.",      \
-                depth_format, image_depth_format);                              \
-            return NULL;                                                        \
-        }                                                                       \
-                                                                                \
-        return icetLayeredImageGetFragmentsConstVoid(image);                    \
-    }
+    } IceTFragment_##format;
 
-FRAGMENT_FORMAT(D32F,
-                IceTFloat,
-                0,
-                ICET_IMAGE_COLOR_NONE,
+FRAGMENT_FORMAT(RGBA8_D32F,
+                IceTUnsignedInt8,
+                4,
+                ICET_IMAGE_COLOR_RGBA_UBYTE,
                 IceTFloat,
                 ICET_IMAGE_DEPTH_FLOAT);
 FRAGMENT_FORMAT(RGB32F_D32F,
@@ -1326,12 +1344,6 @@ FRAGMENT_FORMAT(RGBA32F_D32F,
                 ICET_IMAGE_COLOR_RGBA_FLOAT,
                 IceTFloat,
                 ICET_IMAGE_DEPTH_FLOAT);
-FRAGMENT_FORMAT(RGBA8_D32F,
-                IceTUnsignedInt8,
-                4,
-                ICET_IMAGE_COLOR_RGBA_UBYTE,
-                IceTFloat,
-                ICET_IMAGE_DEPTH_FLOAT);
 
 #undef FRAGMENT_FORMAT
 
@@ -1340,6 +1352,9 @@ void icetImageCopyColorub(const IceTImage image,
                           IceTEnum out_color_format)
 {
     IceTEnum in_color_format = icetImageGetColorFormat(image);
+    const IceTLayerCount num_layers = icetImageIsLayered(image)
+        ? icetLayeredImageGetHeaderConst(image)->num_layers
+        : 1;
 
     if (out_color_format != ICET_IMAGE_COLOR_RGBA_UBYTE) {
         icetRaiseError(ICET_INVALID_ENUM,
@@ -1356,27 +1371,28 @@ void icetImageCopyColorub(const IceTImage image,
     if (in_color_format == out_color_format) {
         const IceTUByte *in_buffer = icetImageGetColorcub(image);
         IceTSizeType color_format_bytes = (  icetImageGetNumPixels(image)
-                                           * colorPixelSize(in_color_format) );
+                                           * colorPixelSize(in_color_format)
+                                           * num_layers );
         memcpy(color_buffer, in_buffer, color_format_bytes);
     } else if (   (in_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT)
                && (out_color_format == ICET_IMAGE_COLOR_RGBA_UBYTE) ) {
         const IceTFloat *in_buffer = icetImageGetColorcf(image);
-        IceTSizeType num_pixels = icetImageGetNumPixels(image);
+        IceTSizeType num_fragments = icetImageGetNumPixels(image)*num_layers;
         IceTSizeType i;
         const IceTFloat *in;
         IceTUByte *out;
-        for (i = 0, in = in_buffer, out = color_buffer; i < 4*num_pixels;
+        for (i = 0, in = in_buffer, out = color_buffer; i < 4*num_fragments;
              i++, in++, out++) {
             out[0] = (IceTUByte)(255*in[0]);
         }
     } else if (   (in_color_format == ICET_IMAGE_COLOR_RGB_FLOAT)
                && (out_color_format == ICET_IMAGE_COLOR_RGBA_UBYTE) ) {
         const IceTFloat *in_buffer = icetImageGetColorcf(image);
-        IceTSizeType num_pixels = icetImageGetNumPixels(image);
+        IceTSizeType num_fragments = icetImageGetNumPixels(image)*num_layers;
         IceTSizeType i;
         const IceTFloat *in = in_buffer;
         IceTUByte *out = color_buffer;
-        for (i = 0; i < num_pixels; i++) {
+        for (i = 0; i < num_fragments; i++) {
             out[0] = (IceTUByte)(255*in[0]);
             out[1] = (IceTUByte)(255*in[1]);
             out[2] = (IceTUByte)(255*in[2]);
@@ -1397,6 +1413,9 @@ void icetImageCopyColorf(const IceTImage image,
                          IceTEnum out_color_format)
 {
     IceTEnum in_color_format = icetImageGetColorFormat(image);
+    const IceTLayerCount num_layers = icetImageIsLayered(image)
+        ? icetLayeredImageGetHeaderConst(image)->num_layers
+        : 1;
 
     if (   (out_color_format != ICET_IMAGE_COLOR_RGBA_FLOAT)
         && (out_color_format != ICET_IMAGE_COLOR_RGB_FLOAT)) {
@@ -1414,27 +1433,28 @@ void icetImageCopyColorf(const IceTImage image,
     if (in_color_format == out_color_format) {
         const IceTFloat *in_buffer = icetImageGetColorcf(image);
         IceTSizeType color_format_bytes = (  icetImageGetNumPixels(image)
-                                           * colorPixelSize(in_color_format) );
+                                           * colorPixelSize(in_color_format)
+                                           * num_layers );
         memcpy(color_buffer, in_buffer, color_format_bytes);
     } else if (   (in_color_format == ICET_IMAGE_COLOR_RGBA_UBYTE)
                && (out_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) ) {
         const IceTUByte *in_buffer = icetImageGetColorcub(image);
-        IceTSizeType num_pixels = icetImageGetNumPixels(image);
+        IceTSizeType num_fragments = icetImageGetNumPixels(image)*num_layers;
         IceTSizeType i;
         const IceTUByte *in;
         IceTFloat *out;
-        for (i = 0, in = in_buffer, out = color_buffer; i < 4*num_pixels;
+        for (i = 0, in = in_buffer, out = color_buffer; i < 4*num_fragments;
              i++, in++, out++) {
             out[0] = (IceTFloat)in[0]/255.0f;
         }
     } else if (   (in_color_format == ICET_IMAGE_COLOR_RGBA_UBYTE)
                && (out_color_format == ICET_IMAGE_COLOR_RGB_FLOAT) ) {
         const IceTUByte *in_buffer = icetImageGetColorcub(image);
-        IceTSizeType num_pixels = icetImageGetNumPixels(image);
+        IceTSizeType num_fragments = icetImageGetNumPixels(image)*num_layers;
         IceTSizeType i;
         const IceTUByte *in = in_buffer;
         IceTFloat *out = color_buffer;
-        for (i = 0; i < num_pixels; i++) {
+        for (i = 0; i < num_fragments; i++) {
             out[0] = (IceTFloat)in[0]/255.0f;
             out[1] = (IceTFloat)in[1]/255.0f;
             out[2] = (IceTFloat)in[2]/255.0f;
@@ -1444,11 +1464,11 @@ void icetImageCopyColorf(const IceTImage image,
     } else if (   (in_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT)
                && (out_color_format == ICET_IMAGE_COLOR_RGB_FLOAT) ) {
         const IceTFloat *in_buffer = icetImageGetColorcf(image);
-        IceTSizeType num_pixels = icetImageGetNumPixels(image);
+        IceTSizeType num_fragments = icetImageGetNumPixels(image)*num_layers;
         IceTSizeType i;
         const IceTFloat *in = in_buffer;
         IceTFloat *out = color_buffer;
-        for (i = 0; i < num_pixels; i++) {
+        for (i = 0; i < num_fragments; i++) {
             out[0] = (IceTFloat)in[0];
             out[1] = (IceTFloat)in[1];
             out[2] = (IceTFloat)in[2];
@@ -1458,11 +1478,11 @@ void icetImageCopyColorf(const IceTImage image,
     } else if (   (in_color_format == ICET_IMAGE_COLOR_RGB_FLOAT)
                && (out_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) ) {
         const IceTFloat *in_buffer = icetImageGetColorcf(image);
-        IceTSizeType num_pixels = icetImageGetNumPixels(image);
+        IceTSizeType num_fragments = icetImageGetNumPixels(image)*num_layers;
         IceTSizeType i;
         const IceTFloat *in = in_buffer;
         IceTFloat *out = color_buffer;
-        for (i = 0; i < num_pixels; i++) {
+        for (i = 0; i < num_fragments; i++) {
             out[0] = (IceTFloat)in[0];
             out[1] = (IceTFloat)in[1];
             out[2] = (IceTFloat)in[2];
@@ -1483,6 +1503,9 @@ void icetImageCopyDepthf(const IceTImage image,
                          IceTEnum out_depth_format)
 {
     IceTEnum in_depth_format = icetImageGetDepthFormat(image);
+    const IceTLayerCount num_layers = icetImageIsLayered(image)
+        ? icetLayeredImageGetHeaderConst(image)->num_layers
+        : 1;
 
     if (out_depth_format != ICET_IMAGE_DEPTH_FLOAT) {
         icetRaiseError(ICET_INVALID_ENUM,
@@ -1501,7 +1524,8 @@ void icetImageCopyDepthf(const IceTImage image,
     {
         const IceTFloat *in_buffer = icetImageGetDepthcf(image);
         IceTSizeType depth_format_bytes = (  icetImageGetNumPixels(image)
-                                           * depthPixelSize(in_depth_format) );
+                                           * depthPixelSize(in_depth_format)
+                                           * num_layers );
         memcpy(depth_buffer, in_buffer, depth_format_bytes);
     }
 }
@@ -1516,6 +1540,12 @@ void icetImageCopyPixels(const IceTImage in_image, IceTSizeType in_offset,
                          IceTSizeType num_pixels)
 {
     IceTEnum color_format, depth_format;
+    const IceTLayerCount in_layers = icetImageIsLayered(in_image)
+        ? icetLayeredImageGetHeaderConst(in_image)->num_layers
+        : 1;
+    const IceTLayerCount out_layers = icetImageIsLayered(out_image)
+        ? icetLayeredImageGetHeaderConst(out_image)->num_layers
+        : 1;
 
     color_format = icetImageGetColorFormat(in_image);
     depth_format = icetImageGetDepthFormat(in_image);
@@ -1530,11 +1560,19 @@ void icetImageCopyPixels(const IceTImage in_image, IceTSizeType in_offset,
          || (in_offset + num_pixels > icetImageGetNumPixels(in_image)) ) {
         icetRaiseError(ICET_INVALID_VALUE,
                        "Pixels to copy are outside of range of source image.");
+        return;
     }
     if (    (out_offset < 0)
          || (out_offset + num_pixels > icetImageGetNumPixels(out_image)) ) {
         icetRaiseError(ICET_INVALID_VALUE,
-                       "Pixels to copy are outside of range of source image.");
+            "Pixels to copy are outside of range of destination image.");
+        return;
+    }
+    if (in_layers != out_layers) {
+        icetRaiseError(ICET_INVALID_VALUE,
+                       "Can only copy pixels between images with the same "
+                       "number of layers.");
+        return;
     }
 
     if (color_format != ICET_IMAGE_COLOR_NONE) {
@@ -1567,6 +1605,12 @@ void icetImageCopyRegion(const IceTImage in_image,
 {
     IceTEnum color_format = icetImageGetColorFormat(in_image);
     IceTEnum depth_format = icetImageGetDepthFormat(in_image);
+    const IceTLayerCount in_layers = icetImageIsLayered(in_image)
+        ? icetLayeredImageGetHeaderConst(in_image)->num_layers
+        : 1;
+    const IceTLayerCount out_layers = icetImageIsLayered(out_image)
+        ? icetLayeredImageGetHeaderConst(out_image)->num_layers
+        : 1;
 
     if (    (color_format != icetImageGetColorFormat(out_image))
          || (depth_format != icetImageGetDepthFormat(out_image)) ) {
@@ -1580,6 +1624,13 @@ void icetImageCopyRegion(const IceTImage in_image,
          || (in_viewport[3] != out_viewport[3]) ) {
         icetRaiseError(ICET_INVALID_VALUE,
                        "Sizes of input and output regions must be the same.");
+        return;
+    }
+
+    if (in_layers != out_layers) {
+        icetRaiseError(ICET_INVALID_VALUE,
+                       "Can only copy pixels between images with the same "
+                       "number of layers.");
         return;
     }
 
@@ -1632,9 +1683,13 @@ void icetImageClearAroundRegion(IceTImage image, const IceTInt *region)
 {
     IceTSizeType width = icetImageGetWidth(image);
     IceTSizeType height = icetImageGetHeight(image);
+    IceTLayerCount num_layers = icetImageIsLayered(image)
+        ? icetLayeredImageGetHeaderConst(image)->num_layers
+        : 1;
     IceTEnum color_format = icetImageGetColorFormat(image);
     IceTEnum depth_format = icetImageGetDepthFormat(image);
     IceTSizeType x, y;
+    IceTLayerCount layer;
 
     if (color_format == ICET_IMAGE_COLOR_RGBA_UBYTE) {
         IceTUInt *color_buffer = icetImageGetColorui(image);
@@ -1645,24 +1700,36 @@ void icetImageClearAroundRegion(IceTImage image, const IceTInt *region)
       /* Clear out bottom. */
         for (y = 0; y < region[1]; y++) {
             for (x = 0; x < width; x++) {
-                color_buffer[y*width + x] = background_color;
+                for (layer = 0; layer < num_layers; layer++) {
+                    color_buffer[(y*width + x) * num_layers + layer] =
+                        background_color;
+                }
             }
         }
       /* Clear out left and right. */
         if ((region[0] > 0) || (region[0]+region[2] < width)) {
             for (y = region[1]; y < region[1]+region[3]; y++) {
                 for (x = 0; x < region[0]; x++) {
-                    color_buffer[y*width + x] = background_color;
+                    for (layer = 0; layer < num_layers; layer++) {
+                        color_buffer[(y*width + x) * num_layers + layer] =
+                            background_color;
+                    }
                 }
                 for (x = region[0]+region[2]; x < width; x++) {
-                    color_buffer[y*width + x] = background_color;
+                    for (layer = 0; layer < num_layers; layer++) {
+                        color_buffer[(y*width + x) * num_layers + layer] =
+                            background_color;
+                    }
                 }
             }
         }
       /* Clear out top. */
         for (y = region[1]+region[3]; y < height; y++) {
             for (x = 0; x < width; x++) {
-                color_buffer[y*width + x] = background_color;
+                for (layer = 0; layer < num_layers; layer++) {
+                    color_buffer[(y*width + x) * num_layers + layer] =
+                        background_color;
+                }
             }
         }
     } else if (color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) {
@@ -1674,36 +1741,52 @@ void icetImageClearAroundRegion(IceTImage image, const IceTInt *region)
       /* Clear out bottom. */
         for (y = 0; y < region[1]; y++) {
             for (x = 0; x < width; x++) {
-                color_buffer[4*(y*width + x) + 0] = background_color[0];
-                color_buffer[4*(y*width + x) + 1] = background_color[1];
-                color_buffer[4*(y*width + x) + 2] = background_color[2];
-                color_buffer[4*(y*width + x) + 3] = background_color[3];
+                for (layer = 0; layer < num_layers; layer++) {
+                    const IceTSizeType offset =
+                        ((y*width + x) * num_layers + layer) * 4;
+                    color_buffer[offset + 0] = background_color[0];
+                    color_buffer[offset + 1] = background_color[1];
+                    color_buffer[offset + 2] = background_color[2];
+                    color_buffer[offset + 3] = background_color[3];
+                }
             }
         }
       /* Clear out left and right. */
         if ((region[0] > 0) || (region[0]+region[2] < width)) {
             for (y = region[1]; y < region[1]+region[3]; y++) {
                 for (x = 0; x < region[0]; x++) {
-                    color_buffer[4*(y*width + x) + 0] = background_color[0];
-                    color_buffer[4*(y*width + x) + 1] = background_color[1];
-                    color_buffer[4*(y*width + x) + 2] = background_color[2];
-                    color_buffer[4*(y*width + x) + 3] = background_color[3];
+                    for (layer = 0; layer < num_layers; layer++) {
+                        const IceTSizeType offset =
+                            ((y*width + x) * num_layers + layer) * 4;
+                        color_buffer[offset + 0] = background_color[0];
+                        color_buffer[offset + 1] = background_color[1];
+                        color_buffer[offset + 2] = background_color[2];
+                        color_buffer[offset + 3] = background_color[3];
+                    }
                 }
                 for (x = region[0]+region[2]; x < width; x++) {
-                    color_buffer[4*(y*width + x) + 0] = background_color[0];
-                    color_buffer[4*(y*width + x) + 1] = background_color[1];
-                    color_buffer[4*(y*width + x) + 2] = background_color[2];
-                    color_buffer[4*(y*width + x) + 3] = background_color[3];
+                    for (layer = 0; layer < num_layers; layer++) {
+                        const IceTSizeType offset =
+                            ((y*width + x) * num_layers + layer) * 4;
+                        color_buffer[offset + 0] = background_color[0];
+                        color_buffer[offset + 1] = background_color[1];
+                        color_buffer[offset + 2] = background_color[2];
+                        color_buffer[offset + 3] = background_color[3];
+                    }
                 }
             }
         }
       /* Clear out top. */
         for (y = region[1]+region[3]; y < height; y++) {
             for (x = 0; x < width; x++) {
-                color_buffer[4*(y*width + x) + 0] = background_color[0];
-                color_buffer[4*(y*width + x) + 1] = background_color[1];
-                color_buffer[4*(y*width + x) + 2] = background_color[2];
-                color_buffer[4*(y*width + x) + 3] = background_color[3];
+                for (layer = 0; layer < num_layers; layer++) {
+                    const IceTSizeType offset =
+                        ((y*width + x) * num_layers + layer) * 4;
+                    color_buffer[offset + 0] = background_color[0];
+                    color_buffer[offset + 1] = background_color[1];
+                    color_buffer[offset + 2] = background_color[2];
+                    color_buffer[offset + 3] = background_color[3];
+                }
             }
         }
     } else if (color_format == ICET_IMAGE_COLOR_RGB_FLOAT) {
@@ -1715,32 +1798,48 @@ void icetImageClearAroundRegion(IceTImage image, const IceTInt *region)
       /* Clear out bottom. */
         for (y = 0; y < region[1]; y++) {
             for (x = 0; x < width; x++) {
-                color_buffer[3*(y*width + x) + 0] = background_color[0];
-                color_buffer[3*(y*width + x) + 1] = background_color[1];
-                color_buffer[3*(y*width + x) + 2] = background_color[2];
+                for (layer = 0; layer < num_layers; layer++) {
+                    const IceTSizeType offset =
+                        ((y*width + x) * num_layers + layer) * 3;
+                    color_buffer[offset + 0] = background_color[0];
+                    color_buffer[offset + 1] = background_color[1];
+                    color_buffer[offset + 2] = background_color[2];
+                }
             }
         }
       /* Clear out left and right. */
         if ((region[0] > 0) || (region[0]+region[2] < width)) {
             for (y = region[1]; y < region[1]+region[3]; y++) {
                 for (x = 0; x < region[0]; x++) {
-                    color_buffer[3*(y*width + x) + 0] = background_color[0];
-                    color_buffer[3*(y*width + x) + 1] = background_color[1];
-                    color_buffer[3*(y*width + x) + 2] = background_color[2];
+                    for (layer = 0; layer < num_layers; layer++) {
+                        const IceTSizeType offset =
+                            ((y*width + x) * num_layers + layer) * 3;
+                        color_buffer[offset + 0] = background_color[0];
+                        color_buffer[offset + 1] = background_color[1];
+                        color_buffer[offset + 2] = background_color[2];
+                    }
                 }
                 for (x = region[0]+region[2]; x < width; x++) {
-                    color_buffer[3*(y*width + x) + 0] = background_color[0];
-                    color_buffer[3*(y*width + x) + 1] = background_color[1];
-                    color_buffer[3*(y*width + x) + 2] = background_color[2];
+                    for (layer = 0; layer < num_layers; layer++) {
+                        const IceTSizeType offset =
+                            ((y*width + x) * num_layers + layer) * 3;
+                        color_buffer[offset + 0] = background_color[0];
+                        color_buffer[offset + 1] = background_color[1];
+                        color_buffer[offset + 2] = background_color[2];
+                    }
                 }
             }
         }
       /* Clear out top. */
         for (y = region[1]+region[3]; y < height; y++) {
             for (x = 0; x < width; x++) {
-                color_buffer[3*(y*width + x) + 0] = background_color[0];
-                color_buffer[3*(y*width + x) + 1] = background_color[1];
-                color_buffer[3*(y*width + x) + 2] = background_color[2];
+                for (layer = 0; layer < num_layers; layer++) {
+                    const IceTSizeType offset =
+                        ((y*width + x) * num_layers + layer) * 3;
+                    color_buffer[offset + 0] = background_color[0];
+                    color_buffer[offset + 1] = background_color[1];
+                    color_buffer[offset + 2] = background_color[2];
+                }
             }
         }
     } else if (color_format != ICET_IMAGE_COLOR_NONE) {
@@ -1754,24 +1853,32 @@ void icetImageClearAroundRegion(IceTImage image, const IceTInt *region)
       /* Clear out bottom. */
         for (y = 0; y < region[1]; y++) {
             for (x = 0; x < width; x++) {
-                depth_buffer[y*width + x] = 1.0f;
+                for (layer = 0; layer < num_layers; layer++) {
+                    depth_buffer[(y*width + x) * num_layers + layer] = 1.0f;
+                }
             }
         }
       /* Clear out left and right. */
         if ((region[0] > 0) || (region[0]+region[2] < width)) {
             for (y = region[1]; y < region[1]+region[3]; y++) {
                 for (x = 0; x < region[0]; x++) {
-                    depth_buffer[y*width + x] = 1.0f;
+                    for (layer = 0; layer < num_layers; layer++) {
+                        depth_buffer[(y*width + x) * num_layers + layer] = 1.0f;
+                    }
                 }
                 for (x = region[0]+region[2]; x < width; x++) {
-                    depth_buffer[y*width + x] = 1.0f;
+                    for (layer = 0; layer < num_layers; layer++) {
+                        depth_buffer[(y*width + x) * num_layers + layer] = 1.0f;
+                    }
                 }
             }
         }
       /* Clear out top. */
         for (y = region[1]+region[3]; y < height; y++) {
             for (x = 0; x < width; x++) {
-                depth_buffer[y*width + x] = 1.0f;
+                for (layer = 0; layer < num_layers; layer++) {
+                    depth_buffer[(y*width + x) * num_layers + layer] = 1.0f;
+                }
             }
         }
     } else if (depth_format != ICET_IMAGE_DEPTH_NONE) {
@@ -2718,7 +2825,7 @@ static IceTSparseImage getCompressedRenderedBufferImage(
     if (icetImageIsLayered(rendered_image)
             && composite_mode == ICET_COMPOSITE_MODE_BLEND) {
         const IceTLayerCount num_layers =
-                    icetLayeredImageGetHeader(rendered_image)->num_layers;
+                    icetLayeredImageGetHeaderConst(rendered_image)->num_layers;
         sparseImage = icetGetStateBufferSparseLayeredImage(
                     ICET_SPARSE_TILE_BUFFER, tile_width, tile_height, num_layers);
     } else {

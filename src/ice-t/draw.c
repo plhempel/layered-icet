@@ -902,7 +902,8 @@ IceTImage icetCompositeImage(const IceTVoid *color_buffer,
     return drawDoFrame(projection_matrix, modelview_matrix, background_color);
 }
 
-IceTImage icetCompositeImageLayered(const IceTVoid *fragment_buffer,
+IceTImage icetCompositeImageLayered(const IceTVoid *color_buffer,
+                                    const IceTVoid *depth_buffer,
                                     IceTInt num_layers,
                                     const IceTInt *valid_pixels_viewport,
                                     const IceTDouble *projection_matrix,
@@ -933,7 +934,8 @@ IceTImage icetCompositeImageLayered(const IceTVoid *fragment_buffer,
                                     global_viewport[2],
                                     global_viewport[3],
                                     num_layers,
-                                    fragment_buffer);
+                                    color_buffer,
+                                    depth_buffer);
     if (valid_pixels_viewport) {
         icetStateSetIntegerv(ICET_RENDERED_VIEWPORT, 4, valid_pixels_viewport);
     } else {
