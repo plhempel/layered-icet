@@ -84,10 +84,9 @@
 
 #ifdef SIS_LAYERED
         if (active_till_next_runl <= pixels_left) {
-            count = active_till_nect_runl;
+            count = active_till_next_runl;
             frag_count = active_frags_till_next_runl;
         } else {
-            count = pixels_left;
             /* With an incomplete run, the only way to determine the number of
              * fragments is to iterate over each pixel. */
             const IceTVoid *data = in_data;
@@ -95,6 +94,7 @@
                                                 pixels_left,
                                                 fragment_size,
                                                 &frag_count);
+            count = pixels_left;
         }
 
         num_bytes = count*sizeof(IceTLayerCount) + frag_count*fragment_size;
