@@ -45,23 +45,28 @@
 {
     IceTEnum _color_format;
     IceTEnum _depth_format;
+    IceTEnum _is_layered;
     IceTEnum _composite_mode;
 
     icetGetEnumv(ICET_COMPOSITE_MODE, &_composite_mode);
 
     _color_format = icetSparseImageGetColorFormat(FRONT_SPARSE_IMAGE);
     _depth_format = icetSparseImageGetDepthFormat(FRONT_SPARSE_IMAGE);
+    _is_layered = icetSparseImageIsLayered(FRONT_SPARSE_IMAGE);
 
     if (   (_color_format != icetSparseImageGetColorFormat(BACK_SPARSE_IMAGE))
         || (_color_format != icetSparseImageGetColorFormat(DEST_SPARSE_IMAGE))
         || (_depth_format != icetSparseImageGetDepthFormat(BACK_SPARSE_IMAGE))
         || (_depth_format != icetSparseImageGetDepthFormat(DEST_SPARSE_IMAGE))
+        || (_is_layered != icetSparseImageIsLayered(BACK_SPARSE_IMAGE))
+        || (_is_layered != icetSparseImageIsLayered(DEST_SPARSE_IMAGE))
            ) {
         icetRaiseError(ICET_SANITY_CHECK_FAIL,
                        "Input buffers do not agree for compressed-compressed"
                        " composite.");
     }
 
+    if (!_is_layered) {
     if (_composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
         if (_depth_format == ICET_IMAGE_DEPTH_FLOAT) {
           /* Use Z buffer for active pixel testing and compositing. */
@@ -93,7 +98,7 @@
             dest_depth[0] = src2_depth[0];                              \
         }                                                               \
     }
-#define CCC_PIXEL_SIZE (sizeof(IceTUInt) + sizeof(IceTFloat))
+#define CCC_FRAGMENT_SIZE (sizeof(IceTUInt) + sizeof(IceTFloat))
 #include "cc_composite_template_body.h"
 #undef UNPACK_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) {
@@ -130,7 +135,7 @@
             dest_depth[0] = src2_depth[0];                              \
         }                                                               \
     }
-#define CCC_PIXEL_SIZE (5*sizeof(IceTFloat))
+#define CCC_FRAGMENT_SIZE (5*sizeof(IceTFloat))
 #include "cc_composite_template_body.h"
 #undef UNPACK_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_RGB_FLOAT) {
@@ -165,7 +170,7 @@
             dest_depth[0] = src2_depth[0];                              \
         }                                                               \
     }
-#define CCC_PIXEL_SIZE (4*sizeof(IceTFloat))
+#define CCC_FRAGMENT_SIZE (4*sizeof(IceTFloat))
 #include "cc_composite_template_body.h"
 #undef UNPACK_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_NONE) {
@@ -189,7 +194,7 @@
             dest_depth[0] = src2_depth[0];                              \
         }                                                               \
     }
-#define CCC_PIXEL_SIZE (sizeof(IceTFloat))
+#define CCC_FRAGMENT_SIZE (sizeof(IceTFloat))
 #include "cc_composite_template_body.h"
 #undef UNPACK_PIXEL
             } else {
@@ -228,7 +233,7 @@
                          (const IceTUByte *)back_color,                 \
                          (IceTUByte *)dest_color);                      \
     }
-#define CCC_PIXEL_SIZE (sizeof(IceTUInt))
+#define CCC_FRAGMENT_SIZE (sizeof(IceTUInt))
 #include "cc_composite_template_body.h"
 #undef UNPACK_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) {
@@ -248,7 +253,7 @@
         UNPACK_PIXEL(dest_pointer, dest_color);                         \
         ICET_BLEND_FLOAT(front_color, back_color, dest_color);          \
     }
-#define CCC_PIXEL_SIZE (4*sizeof(IceTFloat))
+#define CCC_FRAGMENT_SIZE (4*sizeof(IceTFloat))
 #include "cc_composite_template_body.h"
 #undef UNPACK_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_RGB_FLOAT) {
@@ -272,6 +277,68 @@
         icetRaiseError(ICET_SANITY_CHECK_FAIL,
                        "Encountered invalid composite mode 0x%X.",
                        _composite_mode);
+    }
+    } else { /* Compositing layered images. */
+        switch (_composite_mode) {
+        /* When using a commutative compositing operator, The layers of each
+         * input image are already composited into a non-layered image during
+         * compression, so this point should never be reached.
+         */
+        case ICET_COMPOSITE_MODE_Z_BUFFER:
+            icetRaiseError(ICET_INVALID_OPERATION,
+                           "It does not make sense to use layered images with "
+                           "commutative compositing operators.");
+            break;
+
+        case ICET_COMPOSITE_MODE_BLEND:
+            /* Instantiate template for all possible fragment formats. */
+            switch (_depth_format) {
+                switch (_color_format) {
+                case ICET_IMAGE_COLOR_NONE:
+#define CCCL_FRAGMENT_TYPE IceTFragment_D32F
+#include "cc_composite_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGBA_UBYTE:
+#define CCCL_FRAGMENT_TYPE IceTFragment_RGBA8_D32F
+#include "cc_composite_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGB_FLOAT:
+#define CCCL_FRAGMENT_TYPE IceTFragment_RGB32F_D32F
+#include "cc_composite_template_body_layered.h"
+                    break;
+
+                case ICET_IMAGE_COLOR_RGBA_FLOAT:
+#define CCCL_FRAGMENT_TYPE IceTFragment_RGBA32F_D32F
+#include "cc_composite_template_body_layered.h"
+                    break;
+
+                default:
+                    icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                                   "Encountered invalid color format %#X.",
+                                   _color_format);
+                } /* switch _color_format */
+                break; /* case ICET_IMAGE_DEPTH_FLOAT */
+
+            case ICET_IMAGE_DEPTH_NONE:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Layered images must contain depth information.");
+                break;
+
+            default:
+                icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                               "Encountered invalid depth format %#X.",
+                               _depth_format);
+            }
+            break; /* case ICET_COMPOSITE_MODE_BLEND */
+
+
+        default:
+            icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                           "Encountered invalid composite mode %#X.",
+                           _composite_mode);
+        } /* switch _composite_mode */
     }
 }
 

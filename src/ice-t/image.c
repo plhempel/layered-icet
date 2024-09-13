@@ -1315,37 +1315,29 @@ IceTFloat *icetImageGetDepthf(IceTImage image)
  * the correspondingly typed fragment buffer accessor function, using a naming
  * scheme based on OpenGL image formats.
  */
-#define FRAGMENT_FORMAT(format,                                                 \
-                        color_type,                                             \
-                        color_channels,                                         \
-                        color_format,                                           \
-                        depth_type,                                             \
-                        depth_format)                                           \
-    typedef struct IceTFragment_##format {                                      \
-        color_type color[color_channels];                                       \
-        depth_type depth;                                                       \
+#define FRAGMENT_FORMAT(format, color_type, color_channels, depth_type) \
+    typedef struct IceTFragment_##format {                              \
+        color_type color[color_channels];                               \
+        depth_type depth;                                               \
     } IceTFragment_##format;
 
-FRAGMENT_FORMAT(RGBA8_D32F,
-                IceTUnsignedInt8,
-                4,
-                ICET_IMAGE_COLOR_RGBA_UBYTE,
-                IceTFloat,
-                ICET_IMAGE_DEPTH_FLOAT);
-FRAGMENT_FORMAT(RGB32F_D32F,
-                IceTFloat,
-                3,
-                ICET_IMAGE_COLOR_RGB_FLOAT,
-                IceTFloat,
-                ICET_IMAGE_DEPTH_FLOAT);
-FRAGMENT_FORMAT(RGBA32F_D32F,
-                IceTFloat,
-                4,
-                ICET_IMAGE_COLOR_RGBA_FLOAT,
-                IceTFloat,
-                ICET_IMAGE_DEPTH_FLOAT);
+FRAGMENT_FORMAT(RGBA8_D32F, IceTUnsignedInt8, 4, IceTFloat);
+FRAGMENT_FORMAT(RGB32F_D32F, IceTFloat, 3, IceTFloat);
+FRAGMENT_FORMAT(RGBA32F_D32F, IceTFloat, 4, IceTFloat);
 
 #undef FRAGMENT_FORMAT
+
+/* Fragment formats with no color must be defined separately, since `color[0]`
+ * is not valid in ANSI C.
+ */
+#define FRAGMENT_FORMAT_NO_COLOR(format, depth_type)    \
+    typedef struct IceTFragment_##format {              \
+        depth_type depth;                               \
+    } IceTFragment_##format;
+
+FRAGMENT_FORMAT_NO_COLOR(D32F, float);
+
+#undef FRAGMENT_FORMAT_NO_COLOR
 
 void icetImageCopyColorub(const IceTImage image,
                           IceTUByte *color_buffer,

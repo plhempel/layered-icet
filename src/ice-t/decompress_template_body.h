@@ -38,6 +38,9 @@
 #ifndef ACTIVE_RUN_LENGTH
 #error Need ACTIVE_RUN_LENGTH macro.  Is this included in image.c?
 #endif
+#ifndef ACTIVE_RUN_LENGTH_FRAGMENTS
+#error Need ACTIVE_RUN_LENGTH_FRAGMENTS macro.  Is this included in image.c?
+#endif
 #ifndef DT_COMPRESSED_IMAGE
 #error Need DT_COMPRESSED_IMAGE macro.  Is this included in image.c?
 #endif
