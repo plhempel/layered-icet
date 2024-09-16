@@ -68,6 +68,11 @@ struct IceTCommunicatorStruct {
                  int src,
                  int tag);
 
+    void *(*RecvAlloc)(struct IceTCommunicatorStruct *self,
+                       IceTEnum buf_pname,
+                       IceTEnum datatype,
+                       int src,
+                       int tag);
     void (*Sendrecv)(struct IceTCommunicatorStruct *self,
                      const void *sendbuf,
                      int sendcount,
@@ -79,6 +84,16 @@ struct IceTCommunicatorStruct {
                      IceTEnum recvtype,
                      int src,
                      int recvtag);
+    void *(*SendrecvAlloc)(struct IceTCommunicatorStruct *self,
+                           const void *sendbuf,
+                           int sendcount,
+                           IceTEnum sendtype,
+                           int dest,
+                           int sendtag,
+                           IceTEnum recvbuf_pname,
+                           IceTEnum recvtype,
+                           int src,
+                           int recvtag);
     void (*Gather)(struct IceTCommunicatorStruct *self,
                    const void *sendbuf,
                    int sendcount,

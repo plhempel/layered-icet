@@ -47,6 +47,15 @@ static void MPIRecv(IceTCommunicator self,
                     IceTEnum datatype,
                     int src,
                     int tag);
+/* Receive a message after allocating an appropriately sized buffer in the state
+ * variable buf_pname.  Returns a pointer to the received data in the new
+ * buffer.
+ */
+static void *MPIRecvAlloc(IceTCommunicator self,
+                          IceTEnum buf_pname,
+                          IceTEnum datatype,
+                          int src,
+                          int tag);
 static void MPISendrecv(IceTCommunicator self,
                         const void *sendbuf,
                         int sendcount,
@@ -58,6 +67,20 @@ static void MPISendrecv(IceTCommunicator self,
                         IceTEnum recvtype,
                         int src,
                         int recvtag);
+/* Asynchronously send a message and receive another, after allocating an
+ * appropriately sized buffer in the state variable recvbuf_pname.  Returns a
+ * pointer to the received data in the new buffer.
+ */
+static void *MPISendrecvAlloc(IceTCommunicator self,
+                              const void *sendbuf,
+                              int sendcount,
+                              IceTEnum sendtype,
+                              int dest,
+                              int sendtag,
+                              IceTEnum recvbuf_pname,
+                              IceTEnum recvtype,
+                              int src,
+                              int recvtag);
 static void MPIGather(IceTCommunicator self,
                       const void *sendbuf,
                       int sendcount,
@@ -213,7 +236,9 @@ IceTCommunicator icetCreateMPICommunicator(MPI_Comm mpi_comm)
     comm->Barrier = MPIBarrier;
     comm->Send = MPISend;
     comm->Recv = MPIRecv;
+    comm->RecvAlloc = MPIRecvAlloc;
     comm->Sendrecv = MPISendrecv;
+    comm->SendrecvAlloc = MPISendrecvAlloc;
     comm->Gather = MPIGather;
     comm->Gatherv = MPIGatherv;
     comm->Allgather = MPIAllgather;
@@ -345,6 +370,30 @@ static void MPIRecv(IceTCommunicator self,
     MPI_Recv(buf, count, mpidatatype, src, tag, MPI_COMM, MPI_STATUS_IGNORE);
 }
 
+static void *MPIRecvAlloc(IceTCommunicator self,
+                          IceTEnum buf_pname,
+                          IceTEnum datatype,
+                          int src,
+                          int tag)
+{
+    MPI_Datatype mpidatatype;
+    MPI_Status status;
+    int count;
+    void *buf;
+
+    CONVERT_DATATYPE(datatype, mpidatatype);
+
+    /* Wait for a message envelope and get its size. */
+    MPI_Probe(src, tag, MPI_COMM, &status);
+    MPI_Get_count(&status, mpidatatype, &count);
+
+    /* Allocate a sufficient buffer and receive the message. */
+    buf = icetGetStateBuffer(buf_pname, count*icetTypeWidth(datatype));
+    MPI_Recv(buf, count, mpidatatype, src, tag, MPI_COMM, MPI_STATUS_IGNORE);
+
+    return buf;
+}
+
 static void MPISendrecv(IceTCommunicator self,
                         const void *sendbuf,
                         int sendcount,
@@ -365,6 +414,46 @@ static void MPISendrecv(IceTCommunicator self,
     MPI_Sendrecv((void *)sendbuf, sendcount, mpisendtype, dest, sendtag,
                  recvbuf, recvcount, mpirecvtype, src, recvtag, MPI_COMM,
                  MPI_STATUS_IGNORE);
+}
+
+static void *MPISendrecvAlloc(IceTCommunicator self,
+                              const void *sendbuf,
+                              int sendcount,
+                              IceTEnum sendtype,
+                              int dest,
+                              int sendtag,
+                              IceTEnum recvbuf_pname,
+                              IceTEnum recvtype,
+                              int src,
+                              int recvtag)
+{
+    MPI_Datatype mpisendtype;
+    MPI_Datatype mpirecvtype;
+    MPI_Status recvstatus;
+    int recvcount;
+    void *recvbuf;
+    MPI_Request sendreq;
+
+    CONVERT_DATATYPE(sendtype, mpisendtype);
+    CONVERT_DATATYPE(recvtype, mpirecvtype);
+
+    /* Start sending our message. */
+    MPI_Isend(sendbuf, sendcount, mpisendtype, dest, sendtag, MPI_COMM,
+              &sendreq);
+
+    /* Wait for the envelope of the incoming message and determine its size. */
+    MPI_Probe(src, recvtag,MPI_COMM, &recvstatus);
+    MPI_Get_count(&recvstatus, mpirecvtype, &recvcount);
+
+    /* Allocate a sufficient buffer and receive the message. */
+    recvbuf = icetGetStateBuffer(recvbuf_pname,
+                                 recvcount*icetTypeWidth(recvtype));
+    MPI_Recv(recvbuf, recvcount, mpirecvtype, src, recvtag, MPI_COMM,
+             MPI_STATUS_IGNORE);
+
+    /* Ensure that our send has completed. */
+    MPI_Wait(&sendreq, MPI_STATUS_IGNORE);
+    return recvbuf;
 }
 
 static void MPIGather(IceTCommunicator self,

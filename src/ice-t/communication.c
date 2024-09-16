@@ -69,6 +69,15 @@ void icetCommRecv(void *buf,
     comm->Recv(comm, buf, (int)count, datatype, src, tag);
 }
 
+void *icetCommRecvAlloc(IceTEnum buf_pname,
+                        IceTEnum datatype,
+                        int src,
+                        int tag)
+{
+    IceTCommunicator comm = icetGetCommunicator();
+    return comm->RecvAlloc(comm, buf_pname, datatype, src, tag);
+}
+
 void icetCommSendrecv(const void *sendbuf,
                       IceTSizeType sendcount,
                       IceTEnum sendtype,
@@ -86,6 +95,23 @@ void icetCommSendrecv(const void *sendbuf,
     icetAddSent(sendcount, sendtype);
     comm->Sendrecv(comm, sendbuf, (int)sendcount, sendtype, dest, sendtag,
                    recvbuf, (int)recvcount, recvtype, src, recvtag);
+}
+
+void *icetCommSendrecvAlloc(const void *sendbuf,
+                            IceTSizeType sendcount,
+                            IceTEnum sendtype,
+                            int dest,
+                            int sendtag,
+                            IceTEnum recvbuf_pname,
+                            IceTEnum recvtype,
+                            int src,
+                            int recvtag)
+{
+    IceTCommunicator comm = icetGetCommunicator();
+    icetCommCheckCount(sendcount);
+    icetAddSent(sendcount, sendtype);
+    return comm->SendrecvAlloc(comm, sendbuf, sendcount, sendtype, dest,
+                               sendtag, recvbuf_pname, recvtype, src, recvtag);
 }
 
 void icetCommGather(const void *sendbuf,

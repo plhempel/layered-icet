@@ -35,6 +35,14 @@ ICET_EXPORT void icetCommRecv(void *buf,
                               IceTEnum datatype,
                               int src,
                               int tag);
+/* Receive a message after allocating an appropriately sized buffer in the state
+ * variable buf_pname.  Returns a pointer to the received data in the new
+ * buffer.
+ */
+ICET_EXPORT void *icetCommRecvAlloc(IceTEnum buf_pname,
+                                    IceTEnum datatype,
+                                    int src,
+                                    int tag);
 ICET_EXPORT void icetCommSendrecv(const void *sendbuf,
                                   IceTSizeType sendcount,
                                   IceTEnum sendtype,
@@ -45,6 +53,19 @@ ICET_EXPORT void icetCommSendrecv(const void *sendbuf,
                                   IceTEnum recvtype,
                                   int src,
                                   int recvtag);
+/* Asynchronously send a message and receive another, after allocating an
+ * appropriately sized buffer in the state variable recvbuf_pname.  Returns a
+ * pointer to the received data in the new buffer.
+ */
+ICET_EXPORT void *icetCommSendrecvAlloc(const void *sendbuf,
+                                        IceTSizeType sendcount,
+                                        IceTEnum sendtype,
+                                        int dest,
+                                        int sendtag,
+                                        IceTEnum recvbuf_pname,
+                                        IceTEnum recvtype,
+                                        int src,
+                                        int recvtag);
 ICET_EXPORT void icetCommGather(const void *sendbuf,
                                 IceTSizeType sendcount,
                                 IceTEnum datatype,
