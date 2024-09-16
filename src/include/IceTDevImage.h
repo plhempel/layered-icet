@@ -307,7 +307,7 @@ ICET_EXPORT void icetCompressedCompressedComposite(
 ICET_EXPORT IceTSparseImage icetCompressedCompressedCompositeAlloc(
                                               const IceTSparseImage front_image,
                                               const IceTSparseImage back_image,
-                                              IceTEnum dest_buffer);
+                                              IceTEnum dest_buffer_pname);
 
 ICET_EXPORT void icetImageCorrectBackground(IceTImage image);
 ICET_EXPORT void icetClearImageTrueBackground(IceTImage image);

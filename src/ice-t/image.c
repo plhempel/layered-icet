@@ -2714,6 +2714,10 @@ void icetSparseImageSplitAlloc(const IceTSparseImage in_image,
                                               out_image);
         }
 
+        /* The out buffer is only large enough for this specific image, so
+         * trigger an error when attempting to resize it. */
+        header[ICET_IMAGE_MAX_NUM_PIXELS_INDEX] = 0;
+
         /* Advance write pointer past the partition. */
         out_data += header[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX];
 
@@ -2783,13 +2787,8 @@ void icetSparseImageInterlace(const IceTSparseImage in_image,
     {
         IceTByte *buffer;
         IceTSizeType buffer_size =
-                                 eventual_num_partitions*sizeof(IceTVoid*)
-                               + 2*eventual_num_partitions*sizeof(IceTSizeType);
-
-        /* Account for additional fragment count. */
-        if (is_layered) {
-            buffer_size += eventual_num_partitions*sizeof(IceTSizeType);
-        }
+              eventual_num_partitions*sizeof(IceTVoid*)
+            + eventual_num_partitions*RUN_LENGTH_SIZE_LAYERED;
 
         buffer = icetGetStateBuffer(scratch_state_buffer, buffer_size);
         in_data_array = (const IceTVoid **)buffer;
@@ -2924,41 +2923,49 @@ void icetSparseImageInterlace(const IceTSparseImage in_image,
 IceTSparseImage icetSparseImageInterlaceAlloc(const IceTSparseImage in_image,
                                               IceTInt eventual_num_partitions,
                                               IceTEnum scratch_state_buffer,
-                                              IceTEnum out_image_buffer)
+                                              IceTEnum out_buffer_pname)
 {
     IceTSparseImage out_image;
+    IceTInt *header;
 
     /* Account for additional run lengths at the start of each partition. */
-    IceTSizeType out_image_size =
+    IceTSizeType out_buffer_size =
           icetSparseImageGetCompressedBufferSize(in_image)
         + eventual_num_partitions*RUN_LENGTH_SIZE_LAYERED;
+    IceTVoid *out_buffer = icetGetStateBuffer(out_buffer_pname,
+                                              out_buffer_size);
 
     /* Allocate result image. */
     if (icetSparseImageIsLayered(in_image)) {
-        out_image = icetGetStateBufferSparseLayeredImage(out_image_buffer,
-                                                         out_image_size,
-                                                         1,
-                                                         1);
+        out_image = icetSparseLayeredImageAssignBuffer(
+                                            out_buffer,
+                                            icetSparseImageGetWidth(in_image),
+                                            icetSparseImageGetHeight(in_image));
     } else {
-        out_image = icetGetStateBufferSparseImage(out_image_buffer,
-                                                  out_image_size,
-                                                  1);
+        out_image = icetSparseImageAssignBuffer(
+                                            out_buffer,
+                                            icetSparseImageGetWidth(in_image),
+                                            icetSparseImageGetHeight(in_image));
     }
 
+    header = ICET_IMAGE_HEADER(out_image);
+
     /* Match image format. */
-    {
-        IceTInt *header = ICET_IMAGE_HEADER(out_image);
-        header[ICET_IMAGE_COLOR_FORMAT_INDEX]
-            = icetSparseImageGetColorFormat(in_image);
-        header[ICET_IMAGE_DEPTH_FORMAT_INDEX]
-            = icetSparseImageGetDepthFormat(in_image);
-    }
+    header[ICET_IMAGE_COLOR_FORMAT_INDEX]
+        = icetSparseImageGetColorFormat(in_image);
+    header[ICET_IMAGE_DEPTH_FORMAT_INDEX]
+        = icetSparseImageGetDepthFormat(in_image);
 
     /* Perform interlace. */
     icetSparseImageInterlace(in_image,
                              eventual_num_partitions,
                              scratch_state_buffer,
                              out_image);
+
+    /* The out buffer is large enough for this specific image, but may be too
+     * small for images with the same size but more active pixels.  To be safe,
+     * trigger an error whenever the image is resized. */
+    header[ICET_IMAGE_MAX_NUM_PIXELS_INDEX] = 0;
     return out_image;
 }
 
@@ -3359,9 +3366,8 @@ void icetComposite(IceTImage destBuffer, const IceTImage srcBuffer,
 
     if (icetImageIsLayered(srcBuffer)) {
         icetRaiseError(ICET_INVALID_OPERATION,
-                       "icetComposite is not implemented for uncompressed"
-                       " images yet. Please composite compressed images"
-                       " instead.");
+                       "icetComposite is not implemented for layered images"
+                       " yet. Please composite compressed images instead.");
     }
 
     pixels = icetImageGetNumPixels(destBuffer);
@@ -3574,7 +3580,7 @@ void icetCompressedCompressedComposite(const IceTSparseImage front_buffer,
 IceTSparseImage icetCompressedCompressedCompositeAlloc(
                                               const IceTSparseImage front_image,
                                               const IceTSparseImage back_image,
-                                              IceTEnum dest_buffer)
+                                              IceTEnum dest_buffer_pname)
 {
     IceTSparseImage dest_image;
 
@@ -3587,25 +3593,31 @@ IceTSparseImage icetCompressedCompressedCompositeAlloc(
     icetTimingBlendBegin();
 
     {
-        IceTSizeType out_image_size =
+        /* The largest possible image is one where the active pixels sets of the
+         * input images are disjoint. */
+        IceTSizeType dest_image_size =
               icetSparseImageGetCompressedBufferSize(front_image)
-            + icetSparseImageGetCompressedBufferSize(back_image)
-            + RUN_LENGTH_SIZE_LAYERED;
-
+            + icetSparseImageGetCompressedBufferSize(back_image);
+        IceTVoid *dest_buffer = icetGetStateBuffer(dest_buffer_pname,
+                                                   dest_image_size);
         dest_image = icetSparseImageIsLayered(front_image)
-            ? icetGetStateBufferSparseLayeredImage(dest_buffer,
-                                                   out_image_size,
-                                                   1,
-                                                   1)
-            : icetGetStateBufferSparseImage(dest_buffer,
-                                            out_image_size,
-                                            1);
+            ? icetSparseLayeredImageAssignBuffer(
+                                           dest_buffer,
+                                           icetSparseImageGetWidth(front_image),
+                                           icetSparseImageGetHeight(back_image))
+            : icetSparseImageAssignBuffer(dest_buffer,
+                                          icetSparseImageGetWidth(front_image),
+                                          icetSparseImageGetHeight(back_image));
     }
 
 #define FRONT_SPARSE_IMAGE front_image
 #define BACK_SPARSE_IMAGE back_image
 #define DEST_SPARSE_IMAGE dest_image
 #include "cc_composite_func_body.h"
+
+    /* The result buffer is only large enough for this specific image, so
+     * trigger an error when attempting to resize it. */
+    ICET_IMAGE_HEADER(dest_image)[ICET_IMAGE_MAX_NUM_PIXELS_INDEX] = 0;
 
     icetTimingBlendEnd();
     return dest_image;
