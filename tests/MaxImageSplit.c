@@ -262,8 +262,17 @@ static int MaxImageSplitTryMax()
            need to get the communiator. */
         {
             IceTCommunicator comm = icetGetCommunicator();
+
+            /* Save the original context's diagnostics level. */
+            IceTEnum diag_level;
+            icetGetEnumv(ICET_DIAGNOSTIC_LEVEL, &diag_level);
+
             icetCreateContext(comm);
+
+            /* Restore the original context's diagnostics level. */
+            icetDiagnostics(diag_level);
         }
+
 
         icetGetIntegerv(ICET_MAX_IMAGE_SPLIT, &reported_image_split);
         if (max_image_split != reported_image_split) {
