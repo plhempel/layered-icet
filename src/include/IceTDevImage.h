@@ -205,6 +205,17 @@ ICET_EXPORT void icetSparseImageSplit(const IceTSparseImage in_image,
                                       IceTInt eventual_num_partitions,
                                       IceTSparseImage *out_images,
                                       IceTSizeType *offsets);
+/* Like icetSparseImageSplit, but automatically creates output images in a
+ * buffer allocated as out_buffer_pname.  All in_images must be null, except for
+ * the first one, which may be equal to in_image.
+ */
+ICET_EXPORT void icetSparseImageSplitAlloc(const IceTSparseImage in_image,
+                                           IceTSizeType in_image_offset,
+                                           IceTInt num_partitions,
+                                           IceTInt eventual_num_partitions,
+                                           IceTEnum out_buffer_pname,
+                                           IceTSparseImage *out_images,
+                                           IceTSizeType *offsets);
 ICET_EXPORT IceTSizeType icetSparseImageSplitPartitionNumPixels(
                                                IceTSizeType input_num_pixels,
                                                IceTInt num_partitions,
@@ -214,6 +225,14 @@ ICET_EXPORT void icetSparseImageInterlace(const IceTSparseImage in_image,
                                           IceTInt eventual_num_partitions,
                                           IceTEnum scratch_state_buffer,
                                           IceTSparseImage out_image);
+/* Like icetSparseImageInterlace, but automatically allocates a state buffer for
+ * the output image.
+ */
+ICET_EXPORT IceTSparseImage icetSparseImageInterlaceAlloc(
+                                                const IceTSparseImage in_image,
+                                                IceTInt eventual_num_partitions,
+                                                IceTEnum scratch_state_buffer,
+                                                IceTEnum out_buffer_pname);
 
 ICET_EXPORT IceTSizeType icetGetInterlaceOffset(
                                               IceTInt partition_index,
@@ -285,6 +304,10 @@ ICET_EXPORT void icetCompressedCompressedComposite(
                                              const IceTSparseImage front_buffer,
                                              const IceTSparseImage back_buffer,
                                              IceTSparseImage dest_buffer);
+ICET_EXPORT IceTSparseImage icetCompressedCompressedCompositeAlloc(
+                                              const IceTSparseImage front_image,
+                                              const IceTSparseImage back_image,
+                                              IceTEnum dest_buffer);
 
 ICET_EXPORT void icetImageCorrectBackground(IceTImage image);
 ICET_EXPORT void icetClearImageTrueBackground(IceTImage image);

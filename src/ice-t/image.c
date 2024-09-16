@@ -2280,6 +2280,8 @@ static void icetSparseLayeredImageCopyPixelsInPlaceInternal(
     if (last_run_length != NULL) {
         INACTIVE_RUN_LENGTH(last_run_length) -= *inactive_before_p;
         ACTIVE_RUN_LENGTH(last_run_length) -= *active_till_next_runl_p;
+        ACTIVE_RUN_LENGTH_FRAGMENTS(last_run_length)
+            -= *active_frags_till_next_runl_p;
     }
 
     icetSparseImageSetActualSize(out_image, *in_data_p);
@@ -2566,6 +2568,174 @@ void icetSparseImageSplit(const IceTSparseImage in_image,
     icetTimingCompressEnd();
 }
 
+void icetSparseImageSplitAlloc(const IceTSparseImage in_image,
+                               IceTSizeType in_image_offset,
+                               IceTInt num_partitions,
+                               IceTInt eventual_num_partitions,
+                               IceTEnum out_buffer_pname,
+                               IceTSparseImage *out_images,
+                               IceTSizeType *offsets)
+{
+    IceTSizeType total_num_pixels;
+
+    IceTEnum color_format;
+    IceTEnum depth_format;
+    IceTSizeType fragment_size;
+    IceTBoolean is_layered;
+
+    const IceTVoid *in_data;
+    IceTByte *out_data;
+    IceTSparseImage out_image;
+#ifdef DEBUG
+    const IceTByte *out_buffer;
+#endif
+    IceTSizeType out_buffer_size;
+    IceTSizeType start_inactive;
+    IceTSizeType start_active;
+    IceTSizeType start_active_frags;
+
+    IceTInt partition = 0;
+
+    icetTimingCompressBegin();
+
+    if (num_partitions < 2) {
+        icetRaiseError(ICET_INVALID_VALUE,
+                       "It does not make sense to call icetSparseImageSplit"
+                       " with less than 2 partitions.");
+        icetTimingCompressEnd();
+        return;
+    }
+
+    total_num_pixels = icetSparseImageGetNumPixels(in_image);
+
+    color_format = icetSparseImageGetColorFormat(in_image);
+    depth_format = icetSparseImageGetDepthFormat(in_image);
+    fragment_size = colorPixelSize(color_format) + depthPixelSize(depth_format);
+    is_layered = icetSparseImageIsLayered(in_image);
+
+    in_data = ICET_IMAGE_DATA(in_image);
+    start_inactive = start_active = start_active_frags = 0;
+
+    icetSparseImageSplitChoosePartitions(num_partitions,
+                                         eventual_num_partitions,
+                                         total_num_pixels,
+                                         in_image_offset,
+                                         offsets);
+
+    /* Calculate the buffer size required to store all partitions. */
+    out_buffer_size =
+          /* Header of the first partition, all run lengths and pixels. */
+          ICET_IMAGE_HEADER(in_image)[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX]
+        +  (num_partitions - 1) /* For each additional partition: */
+          *(  ICET_IMAGE_DATA_START_INDEX*sizeof(IceTInt) /* Header. */
+            + RUN_LENGTH_SIZE_LAYERED ); /* Initial run lengths. */
+
+    /* Copy the first partition in place when possible. */
+    out_image = out_images[0];
+
+    if (icetSparseImageEqual(in_image, out_image)) {
+        IceTSizeType partition_num_pixels;
+
+        /* Safe, because num_partitions >= 2 at this point. */
+        partition_num_pixels = offsets[1] - offsets[0];
+
+        if (is_layered) {
+            icetSparseLayeredImageCopyPixelsInPlaceInternal(
+                                                           &in_data,
+                                                           &start_inactive,
+                                                           &start_active,
+                                                           &start_active_frags,
+                                                           partition_num_pixels,
+                                                           fragment_size,
+                                                           out_image);
+        } else {
+            icetSparseImageCopyPixelsInPlaceInternal(&in_data,
+                                                     &start_inactive,
+                                                     &start_active,
+                                                     partition_num_pixels,
+                                                     fragment_size,
+                                                     out_image);
+        }
+
+        /* The ouput buffer will not contain the first image. */
+        out_buffer_size -=
+            ICET_IMAGE_HEADER(out_image)[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX];
+        ++partition;
+    }
+
+    /* Allocate output buffer. */
+    out_data = icetGetStateBuffer(out_buffer_pname, out_buffer_size);
+#ifdef DEBUG
+    out_buffer = out_data;
+#endif
+
+    for (; partition < num_partitions; partition++) {
+        IceTSizeType partition_num_pixels;
+        IceTInt *header;
+
+        /* Ensure that no existing image will be overwritten. */
+        if (!icetSparseImageIsNull(out_images[partition])) {
+            icetRaiseError(ICET_INVALID_VALUE, "Partition images must be null");
+        }
+
+        /* Calculate the number of pixels in this partition. */
+        if (partition < num_partitions-1) {
+            partition_num_pixels = offsets[partition+1] - offsets[partition];
+        } else {
+            partition_num_pixels
+                = total_num_pixels + in_image_offset - offsets[partition];
+        }
+
+        /* Allocate a new image in the output buffer. */
+        out_image = out_images[partition] = is_layered
+            ? icetSparseLayeredImageAssignBuffer(out_data, partition_num_pixels, 1)
+            : icetSparseImageAssignBuffer(out_data, partition_num_pixels, 1);
+
+        /* Set output format to match input. */
+        header = ICET_IMAGE_HEADER(out_image);
+        header[ICET_IMAGE_COLOR_FORMAT_INDEX] = color_format;
+        header[ICET_IMAGE_DEPTH_FORMAT_INDEX] = depth_format;
+
+        /* Copy data. */
+        if (is_layered) {
+            icetSparseLayeredImageCopyPixelsInternal(&in_data,
+                                                    &start_inactive,
+                                                    &start_active,
+                                                    &start_active_frags,
+                                                    partition_num_pixels,
+                                                    fragment_size,
+                                                    out_image);
+        } else {
+            icetSparseImageCopyPixelsInternal(&in_data,
+                                              &start_inactive,
+                                              &start_active,
+                                              partition_num_pixels,
+                                              fragment_size,
+                                              out_image);
+        }
+
+        /* Advance write pointer past the partition. */
+        out_data += header[ICET_IMAGE_ACTUAL_BUFFER_SIZE_INDEX];
+
+        /* Sanity check to detect buffer overruns. */
+#ifdef DEBUG
+        if (out_data > out_buffer + out_buffer_size) {
+            icetRaiseError(ICET_SANITY_CHECK_FAIL, "Buffer overrun.");
+        }
+#endif
+    }
+
+#ifdef DEBUG
+    if (   (start_inactive != 0)
+        || (start_active != 0)
+        || (is_layered && start_active_frags != 0) ) {
+        icetRaiseError(ICET_SANITY_CHECK_FAIL, "Counting problem.");
+    }
+#endif
+
+    icetTimingCompressEnd();
+}
+
 void icetSparseImageInterlace(const IceTSparseImage in_image,
                               IceTInt eventual_num_partitions,
                               IceTEnum scratch_state_buffer,
@@ -2749,6 +2919,47 @@ void icetSparseImageInterlace(const IceTSparseImage in_image,
     icetSparseImageSetActualSize(out_image, out_data);
 
     icetTimingInterlaceEnd();
+}
+
+IceTSparseImage icetSparseImageInterlaceAlloc(const IceTSparseImage in_image,
+                                              IceTInt eventual_num_partitions,
+                                              IceTEnum scratch_state_buffer,
+                                              IceTEnum out_image_buffer)
+{
+    IceTSparseImage out_image;
+
+    /* Account for additional run lengths at the start of each partition. */
+    IceTSizeType out_image_size =
+          icetSparseImageGetCompressedBufferSize(in_image)
+        + eventual_num_partitions*RUN_LENGTH_SIZE_LAYERED;
+
+    /* Allocate result image. */
+    if (icetSparseImageIsLayered(in_image)) {
+        out_image = icetGetStateBufferSparseLayeredImage(out_image_buffer,
+                                                         out_image_size,
+                                                         1,
+                                                         1);
+    } else {
+        out_image = icetGetStateBufferSparseImage(out_image_buffer,
+                                                  out_image_size,
+                                                  1);
+    }
+
+    /* Match image format. */
+    {
+        IceTInt *header = ICET_IMAGE_HEADER(out_image);
+        header[ICET_IMAGE_COLOR_FORMAT_INDEX]
+            = icetSparseImageGetColorFormat(in_image);
+        header[ICET_IMAGE_DEPTH_FORMAT_INDEX]
+            = icetSparseImageGetDepthFormat(in_image);
+    }
+
+    /* Perform interlace. */
+    icetSparseImageInterlace(in_image,
+                             eventual_num_partitions,
+                             scratch_state_buffer,
+                             out_image);
+    return out_image;
 }
 
 IceTSizeType icetGetInterlaceOffset(IceTInt partition_index,
@@ -3358,6 +3569,46 @@ void icetCompressedCompressedComposite(const IceTSparseImage front_buffer,
 #include "cc_composite_func_body.h"
 
     icetTimingBlendEnd();
+}
+
+IceTSparseImage icetCompressedCompressedCompositeAlloc(
+                                              const IceTSparseImage front_image,
+                                              const IceTSparseImage back_image,
+                                              IceTEnum dest_buffer)
+{
+    IceTSparseImage dest_image;
+
+    if (icetSparseImageEqual(front_image, back_image)) {
+        icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                       "Detected reused buffer in"
+                       " compressed-compressed composite.");
+    }
+
+    icetTimingBlendBegin();
+
+    {
+        IceTSizeType out_image_size =
+              icetSparseImageGetCompressedBufferSize(front_image)
+            + icetSparseImageGetCompressedBufferSize(back_image)
+            + RUN_LENGTH_SIZE_LAYERED;
+
+        dest_image = icetSparseImageIsLayered(front_image)
+            ? icetGetStateBufferSparseLayeredImage(dest_buffer,
+                                                   out_image_size,
+                                                   1,
+                                                   1)
+            : icetGetStateBufferSparseImage(dest_buffer,
+                                            out_image_size,
+                                            1);
+    }
+
+#define FRONT_SPARSE_IMAGE front_image
+#define BACK_SPARSE_IMAGE back_image
+#define DEST_SPARSE_IMAGE dest_image
+#include "cc_composite_func_body.h"
+
+    icetTimingBlendEnd();
+    return dest_image;
 }
 
 void icetImageCorrectBackground(IceTImage image)
