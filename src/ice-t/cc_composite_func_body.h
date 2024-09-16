@@ -293,6 +293,7 @@
         case ICET_COMPOSITE_MODE_BLEND:
             /* Instantiate template for all possible fragment formats. */
             switch (_depth_format) {
+            case ICET_IMAGE_DEPTH_FLOAT:
                 switch (_color_format) {
                 case ICET_IMAGE_COLOR_NONE:
 #define CCCL_FRAGMENT_TYPE IceTFragment_D32F

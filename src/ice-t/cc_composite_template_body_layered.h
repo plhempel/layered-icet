@@ -60,6 +60,10 @@
     /* Count fragments as processed. */                                         \
     _front_num_active_frags -= num_frags1;                                      \
     _back_num_active_frags -= num_frags2;                                       \
+    /* Advance pointers past the pixel. */                                      \
+    pixel1_pointer = (const IceTByte*)frag1;                                    \
+    pixel2_pointer = (const IceTByte*)frag2;                                    \
+    dest_pointer = (IceTByte*)dest_frag;                                        \
 }
 
 /* Define common macros. */
