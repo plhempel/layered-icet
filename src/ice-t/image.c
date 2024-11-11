@@ -2892,7 +2892,7 @@ void icetSparseImageInterlace(const IceTSparseImage in_image,
 
         if (is_layered) {
             active_frags_till_next_runl
-                = active_till_next_runl_array[interlaced_partition_idx];
+                = active_frags_till_next_runl_array[interlaced_partition_idx];
 
             icetSparseLayeredImageScanPixels((const IceTVoid **)&in_data,
                                              &inactive_before,
