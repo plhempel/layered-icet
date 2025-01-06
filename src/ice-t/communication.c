@@ -69,6 +69,15 @@ void icetCommRecv(void *buf,
     comm->Recv(comm, buf, (int)count, datatype, src, tag);
 }
 
+void icetCommProbe(IceTEnum datatype,
+                   int src,
+                   int tag,
+                   IceTCommRecvInfo *recvinfo)
+{
+    IceTCommunicator comm = icetGetCommunicator();
+    return comm->Probe(comm, datatype, src, tag, recvinfo);
+}
+
 void *icetCommRecvAlloc(IceTEnum buf_pname,
                         IceTEnum datatype,
                         int src,

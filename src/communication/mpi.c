@@ -47,9 +47,17 @@ static void MPIRecv(IceTCommunicator self,
                     IceTEnum datatype,
                     int src,
                     int tag);
-/* Receive a message after allocating an appropriately sized buffer in the state
- * variable buf_pname.  Returns a pointer to the received data in the new
- * buffer.
+/* Wait for a matching send to be initiated, then return the message's metadata
+ * without actually receiving it.
+ */
+static void MPIProbe(IceTCommunicator self,
+                     IceTEnum datatype,
+                     int src,
+                     int tag,
+                     IceTCommRecvInfo *recvinfo);
+/* Wait for an incoming message, allocate a sufficient receive buffer in the
+ * state variable `buf_pname`, then receive the message.  Returns a pointer to
+ * the received data in the new buffer.
  */
 static void *MPIRecvAlloc(IceTCommunicator self,
                           IceTEnum buf_pname,
@@ -236,6 +244,7 @@ IceTCommunicator icetCreateMPICommunicator(MPI_Comm mpi_comm)
     comm->Barrier = MPIBarrier;
     comm->Send = MPISend;
     comm->Recv = MPIRecv;
+    comm->Probe = MPIProbe;
     comm->RecvAlloc = MPIRecvAlloc;
     comm->Sendrecv = MPISendrecv;
     comm->SendrecvAlloc = MPISendrecvAlloc;
@@ -370,26 +379,59 @@ static void MPIRecv(IceTCommunicator self,
     MPI_Recv(buf, count, mpidatatype, src, tag, MPI_COMM, MPI_STATUS_IGNORE);
 }
 
+static void MPIProbe(IceTCommunicator self,
+                     IceTEnum datatype,
+                     int src,
+                     int tag,
+                     IceTCommRecvInfo *recvinfo)
+{
+    MPI_Status mpi_status;
+
+    /* Wait for the message envelope. */
+    MPI_Probe(src, tag, MPI_COMM, &mpi_status);
+
+    /* Store the actual sender and tag in case either of the arguments `src` and
+     * `tag` is `MPI_ANY`. */
+    recvinfo->src = mpi_status.MPI_SOURCE;
+    recvinfo->tag = mpi_status.MPI_TAG;
+
+    {
+    /* Query and store the message length. */
+    MPI_Datatype mpi_datatype;
+
+    CONVERT_DATATYPE(datatype, mpi_datatype);
+    MPI_Get_count(&mpi_status, mpi_datatype, &recvinfo->count);
+
+    if (recvinfo->count == MPI_UNDEFINED) {
+        icetRaiseError(ICET_SANITY_CHECK_FAIL,
+                       "Probed a message with unexpected size.");
+    }
+    }
+}
+
 static void *MPIRecvAlloc(IceTCommunicator self,
                           IceTEnum buf_pname,
                           IceTEnum datatype,
                           int src,
                           int tag)
 {
-    MPI_Datatype mpidatatype;
-    MPI_Status status;
-    int count;
+    IceTCommRecvInfo recvinfo;
     void *buf;
 
-    CONVERT_DATATYPE(datatype, mpidatatype);
+    /* Wait for the incoming message and get its metadata. */
+    MPIProbe(self, datatype, src, tag, &recvinfo);
 
-    /* Wait for a message envelope and get its size. */
-    MPI_Probe(src, tag, MPI_COMM, &status);
-    MPI_Get_count(&status, mpidatatype, &count);
+    /* Allocate a sufficiently sized buffer. */
+    buf = icetGetStateBuffer(buf_pname, recvinfo.count*icetTypeWidth(datatype));
 
-    /* Allocate a sufficient buffer and receive the message. */
-    buf = icetGetStateBuffer(buf_pname, count*icetTypeWidth(datatype));
-    MPI_Recv(buf, count, mpidatatype, src, tag, MPI_COMM, MPI_STATUS_IGNORE);
+    /* Receive the message. */
+    {
+    MPI_Datatype mpi_datatype;
+
+    CONVERT_DATATYPE(datatype, mpi_datatype);
+    MPI_Recv(buf, recvinfo.count, mpi_datatype, src, tag, MPI_COMM,
+             MPI_STATUS_IGNORE);
+    }
 
     return buf;
 }

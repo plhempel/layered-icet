@@ -46,6 +46,17 @@ typedef struct IceTCommRequestStruct {
 } *IceTCommRequest;
 #define ICET_COMM_REQUEST_NULL ((IceTCommRequest)NULL)
 
+/* Metadata of an incoming message. */
+typedef struct {
+    /* Communicator rank of the message's sender. */
+    int src;
+    /* Tag used to categorize the message. */
+    int tag;
+    /* Number of values in the message.  The size in bytes depends on the
+     * message's datatype. */
+    int count;
+} IceTCommRecvInfo;
+
 struct IceTCommunicatorStruct {
     struct IceTCommunicatorStruct *
          (*Duplicate)(struct IceTCommunicatorStruct *self);
@@ -67,6 +78,11 @@ struct IceTCommunicatorStruct {
                  IceTEnum datatype,
                  int src,
                  int tag);
+    void (*Probe)(struct IceTCommunicatorStruct *self,
+                  IceTEnum datatype,
+                  int src,
+                  int tag,
+                  IceTCommRecvInfo *recvinfo);
 
     void *(*RecvAlloc)(struct IceTCommunicatorStruct *self,
                        IceTEnum buf_pname,

@@ -35,6 +35,13 @@ ICET_EXPORT void icetCommRecv(void *buf,
                               IceTEnum datatype,
                               int src,
                               int tag);
+/* Wait for a matching send to be initiated, then return the message's metadata
+ * without actually receiving it.
+ */
+void icetCommProbe(IceTEnum datatype,
+                   int src,
+                   int tag,
+                   IceTCommRecvInfo *status);
 /* Receive a message after allocating an appropriately sized buffer in the state
  * variable buf_pname.  Returns a pointer to the received data in the new
  * buffer.
