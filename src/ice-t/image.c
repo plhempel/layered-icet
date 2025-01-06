@@ -3582,25 +3582,28 @@ IceTSparseImage icetCompressedCompressedCompositeAlloc(
                                               const IceTSparseImage back_image,
                                               IceTEnum dest_buffer_pname)
 {
+    IceTVoid *dest_buffer;
     IceTSparseImage dest_image;
 
-    if (icetSparseImageEqual(front_image, back_image)) {
-        icetRaiseError(ICET_SANITY_CHECK_FAIL,
-                       "Detected reused buffer in"
-                       " compressed-compressed composite.");
+    /* The largest possible image is one where the active pixels sets of the
+     * input images are disjoint. */
+    IceTSizeType dest_image_size =
+          icetSparseImageGetCompressedBufferSize(front_image)
+        + icetSparseImageGetCompressedBufferSize(back_image);
+
+    IceTBoolean is_layered = icetSparseImageIsLayered(front_image);
+
+    if (! is_layered) {
+        /* For flat images, overlapping active pixels are blended immediately,
+         * so the images' extent can give a tighter upper bound. */
+        dest_image_size = MIN(dest_image_size, icetSparseImageBufferSize(
+                                        icetSparseImageGetWidth(front_image),
+                                        icetSparseImageGetHeight(front_image)));
     }
 
-    icetTimingBlendBegin();
-
-    {
-        /* The largest possible image is one where the active pixels sets of the
-         * input images are disjoint. */
-        IceTSizeType dest_image_size =
-              icetSparseImageGetCompressedBufferSize(front_image)
-            + icetSparseImageGetCompressedBufferSize(back_image);
-        IceTVoid *dest_buffer = icetGetStateBuffer(dest_buffer_pname,
-                                                   dest_image_size);
-        dest_image = icetSparseImageIsLayered(front_image)
+    /* Initialize the result image in a newly allocated buffer. */
+    dest_buffer = icetGetStateBuffer(dest_buffer_pname, dest_image_size);
+    dest_image = is_layered
             ? icetSparseLayeredImageAssignBuffer(
                                            dest_buffer,
                                            icetSparseImageGetWidth(front_image),
@@ -3608,18 +3611,14 @@ IceTSparseImage icetCompressedCompressedCompositeAlloc(
             : icetSparseImageAssignBuffer(dest_buffer,
                                           icetSparseImageGetWidth(front_image),
                                           icetSparseImageGetHeight(back_image));
-    }
 
-#define FRONT_SPARSE_IMAGE front_image
-#define BACK_SPARSE_IMAGE back_image
-#define DEST_SPARSE_IMAGE dest_image
-#include "cc_composite_func_body.h"
+    /* Composite into the newly created image. */
+    icetCompressedCompressedComposite(front_image, back_image, dest_image);
 
-    /* The result buffer is only large enough for this specific image, so
-     * trigger an error when attempting to resize it. */
+    /* The result buffer is only guaranteed to be large enough for this specific
+     * image, so resizing it should trigger an error. */
     ICET_IMAGE_HEADER(dest_image)[ICET_IMAGE_MAX_NUM_PIXELS_INDEX] = 0;
 
-    icetTimingBlendEnd();
     return dest_image;
 }
 
