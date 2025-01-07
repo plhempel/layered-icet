@@ -1527,6 +1527,13 @@ IceTBoolean icetImageEqual(const IceTImage image1, const IceTImage image2)
     return image1.opaque_internals == image2.opaque_internals;
 }
 
+void icetImageSwap(IceTImage *image1, IceTImage *image2)
+{
+    IceTImage old_image1 = *image1;
+    *image1 = *image2;
+    *image2 = old_image1;
+}
+
 void icetImageCopyPixels(const IceTImage in_image, IceTSizeType in_offset,
                          IceTImage out_image, IceTSizeType out_offset,
                          IceTSizeType num_pixels)
@@ -2094,6 +2101,13 @@ IceTBoolean icetSparseImageEqual(const IceTSparseImage image1,
                                  const IceTSparseImage image2)
 {
     return image1.opaque_internals == image2.opaque_internals;
+}
+
+void icetSparseImageSwap(IceTSparseImage *image1, IceTSparseImage *image2)
+{
+    IceTSparseImage old_image1 = *image1;
+    *image1 = *image2;
+    *image2 = old_image1;
 }
 
 /* Given a pointer to a pixel in a sparse layered image, iterate over a given

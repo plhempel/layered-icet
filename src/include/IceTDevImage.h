@@ -108,6 +108,8 @@ ICET_EXPORT const IceTVoid *icetImageGetDepthConstVoid(
 
 ICET_EXPORT IceTBoolean icetImageEqual(const IceTImage image1,
                                        const IceTImage image2);
+/* Exchange the content of two images.  No pixels are copied. */
+ICET_EXPORT void icetImageSwap(IceTImage *image1, IceTImage *image2);
 ICET_EXPORT void icetImageCopyPixels(const IceTImage in_image,
                                      IceTSizeType in_offset,
                                      IceTImage out_image,
@@ -193,6 +195,9 @@ ICET_EXPORT IceTSparseImage icetSparseImageUnpackageFromReceive(
 
 ICET_EXPORT IceTBoolean icetSparseImageEqual(const IceTSparseImage image1,
                                              const IceTSparseImage image2);
+/* Exchange the content of two sparse images.  No pixels are copied. */
+ICET_EXPORT void icetSparseImageSwap(IceTSparseImage *image1,
+                                     IceTSparseImage *image2);
 
 ICET_EXPORT void icetSparseImageCopyPixels(const IceTSparseImage in_image,
                                            IceTSizeType in_offset,

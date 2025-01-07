@@ -78,7 +78,7 @@ typedef struct radixkrPartnerGroupInfoStruct {
 
 /* BEGIN_PIVOT_FOR(loop_var, low, pivot, high)...END_PIVOT_FOR() provides a
    special looping mechanism that iterates over the numbers pivot, pivot-1,
-   pivot+1, pivot-2, pivot-3,... until all numbers between low (inclusive) and
+   pivot+1, pivot-2, pivot+2,... until all numbers between low (inclusive) and
    high (exclusive) are visited.  Any numbers outside [low,high) are skipped. */
 #define BEGIN_PIVOT_FOR(loop_var, low, pivot, high) \
     { \
@@ -106,13 +106,6 @@ static IceTInt radixkrFindFloorLog2(IceTInt x)
     for (lg = 0; (IceTUInt)(1 << lg) <= (IceTUInt)x; lg++);
     lg--;
     return lg;
-}
-
-static void radixkrSwapImages(IceTSparseImage *image1, IceTSparseImage *image2)
-{
-    IceTSparseImage old_image1 = *image1;
-    *image1 = *image2;
-    *image2 = old_image1;
 }
 
 /* radixkrGetPartitionIndices
@@ -688,7 +681,7 @@ static IceTBoolean radixkrTryCompositeIncoming(
         icetCompressedCompressedComposite(partners[front_index].receiveImage,
                                           partners[back_index].receiveImage,
                                           spare_image);
-        radixkrSwapImages(&partners[front_index].receiveImage, &spare_image);
+        icetSparseImageSwap(&partners[front_index].receiveImage, &spare_image);
         if (icetSparseImageEqual(spare_image, final_image)) {
             /* Special case, front image was sharing buffer with final.
                Use back image for next spare. */
