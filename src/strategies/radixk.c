@@ -197,6 +197,7 @@ static radixkInfo radixkGetK(IceTInt compose_group_size,
     info.num_rounds = 0;
 
     icetGetIntegerv(ICET_MAGIC_K, &magic_k);
+    icetRaiseDebug("ICET_MAGIC_K: %d", magic_k);
 
     /* The maximum number of factors possible is the floor of log base 2. */
     max_num_k = radixkFindFloorPow2(compose_group_size);
@@ -451,6 +452,7 @@ static IceTCommRequest *radixkPostReceives(radixkPartnerInfo *partners,
     IceTByte *spare_buffer;
     /* Number of pixels in each image this process receives. */
     IceTSizeType partition_num_pixels = -1;
+    IceTBoolean layered_images = icetSparseImageIsLayered(my_image);
 
     /* If not collecting any image partition, post no receives. */
     if (!round_info->has_image) { return NULL; }
@@ -510,6 +512,11 @@ static IceTCommRequest *radixkPostReceives(radixkPartnerInfo *partners,
         }
     }
 
+    /* In all rounds after the first one, my_image is backed by the previous
+     * round's receive buffer.  Reallocating the buffer invalidates the image.
+     */
+    my_image = icetSparseImageNull();
+
     recv_buffer = icetGetStateBuffer(receive_buffer_pname, total_size);
     spare_buffer = icetGetStateBuffer(spare_buffer_pname, total_size);
     }
@@ -520,7 +527,7 @@ static IceTCommRequest *radixkPostReceives(radixkPartnerInfo *partners,
 
         /* Assign receive buffer and create spare image. */
         p->receiveBuffer = recv_buffer;
-        p->spareImage = icetSparseImageIsLayered(my_image)
+        p->spareImage = layered_images
             ? icetSparseLayeredImageAssignBuffer(spare_buffer,
                                                  partition_num_pixels,
                                                  1)
