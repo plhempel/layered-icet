@@ -26,15 +26,9 @@
  *              run.  Should be either `RUN_LENGTH_SIZE` or
  *              `RUN_LENGTH_SIZE_LAYERED`, depending on the format of the
  *              compressed image.
- *     *CT_TEST_PIXEL(out) - sets `out` to `ICET_TRUE` if the current pixel is
- *              active and `ICET_FALSE` if it is not.
- *     *CT_WRITE_PIXEL_IF_ACTIVE(pointer, out_is_active) - If the current pixel
- *              is active, writes the pixel to the pointer, increments the
- *              pointer and sets `out_is_active` to `ICET_TRUE`.  Otherwise sets
- *              `out_is_active` to `ICET_FALSE`.  The previous value of
- *              `out_is_active` is ignored.  If `CT_ACTIVE_FRAGS` is defined,
- *              adds the number of active fragments at this pixel to the
- *              accumulator.
+ *     *CT_ACTIVE() - provides a true value if the current pixel is active.
+ *     *CT_WRITE_PIXEL(pointer) - writes the current pixel to the pointer and
+ *              increments the pointer.
  *      CT_INCREMENT_PIXEL() - Increments to the next input pixel.
  *
  * The following macros are optional:
@@ -67,6 +61,15 @@
 #endif
 #ifndef CT_RUN_LENGTH_SIZE
 #error Need CT_RUN_LENGTH_SIZE macro.  Is this included in image.c?
+#endif
+#ifndef CT_ACTIVE
+#error Need CT_ACTIVE macro.  Is this included in image.c?
+#endif
+#ifndef CT_WRITE_PIXEL
+#error Need CT_WRITE_PIXEL macro.  Is this included in image.c?
+#endif
+#ifndef CT_INCREMENT_PIXEL
+#error Need CT_INCREMENT_PIXEL macro.  Is this included in image.c?
 #endif
 #ifndef ICET_IMAGE_DATA
 #error Need ICET_IMAGE_DATA macro.  Is this included in image.c?
@@ -118,11 +121,7 @@
             while (ICET_TRUE) {
                 IceTVoid *_runlengths;
                 /* Count background pixels. */
-                while (_x < _lastx) {
-                    IceTBoolean _is_active;
-                    CT_TEST_PIXEL(_is_active);
-                    if (_is_active) break;
-
+                while ((_x < _lastx) && (!CT_ACTIVE())) {
                     _x++;
                     _count++;
                     CT_INCREMENT_PIXEL();
@@ -136,11 +135,8 @@
 #endif
                 /* Count and store active pixels. */
                 _count = 0;
-                while (_x < _lastx) {
-                    IceTBoolean _is_active;
-                    CT_WRITE_PIXEL_IF_ACTIVE(_dest, _is_active);
-                    if (!_is_active) break;
-
+                while ((_x < _lastx) && CT_ACTIVE()) {
+                    CT_WRITE_PIXEL(_dest);
                     CT_INCREMENT_PIXEL();
                     _count++;
                     _x++;
@@ -171,11 +167,7 @@
             IceTVoid *_runlengths = _dest;
             _dest += CT_RUN_LENGTH_SIZE;
           /* Count background pixels. */
-            while (_p < _pixels) {
-                IceTBoolean _is_active;
-                CT_TEST_PIXEL(_is_active);
-                if (_is_active) break;
-
+            while ((_p < _pixels) && (!CT_ACTIVE())) {
                 _p++;
                 _count++;
                 CT_INCREMENT_PIXEL();
@@ -187,11 +179,8 @@
 
           /* Count and store active pixels. */
             _count = 0;
-            while (_p < _pixels) {
-                IceTBoolean _is_active;
-                CT_WRITE_PIXEL_IF_ACTIVE(_dest, _is_active);
-                if (!_is_active) break;
-
+            while ((_p < _pixels) && CT_ACTIVE()) {
+                CT_WRITE_PIXEL(_dest);
                 CT_INCREMENT_PIXEL();
                 _count++;
                 _p++;
@@ -256,8 +245,6 @@
 #undef CT_COLOR_FORMAT
 #undef CT_DEPTH_FORMAT
 #undef CT_PIXEL_COUNT
-#undef CT_ACTIVE
-#undef CT_WRITE_PIXEL
 #undef CT_INCREMENT_PIXEL
 #undef COMPRESSED_SIZE
 

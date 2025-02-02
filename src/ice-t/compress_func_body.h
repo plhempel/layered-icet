@@ -134,28 +134,6 @@
 #undef CT_ACTIVE_FRAGS
 #define CT_RUN_LENGTH_SIZE  RUN_LENGTH_SIZE
 
-/* To allow for more complex control flow, the active pixel test is now a
- * statement that sets an output variable, rather than an expression.
- */
-#define CT_TEST_PIXEL(out)  out = CT_ACTIVE();
-
-/* Checking whether a pixel is active and copying it to the output buffer if so
- * are now combined.  This is useful for layered images, where it avoids the
- * need to check each fragment twice.
- */
-#define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)   \
-{                                                       \
-    CT_TEST_PIXEL(out_is_active);                       \
-                                                        \
-    if (out_is_active) {                                \
-        CT_WRITE_PIXEL(dest);                           \
-    }                                                   \
-}
-
-/* With the above macros in place, the existing template instantiations can
- * remain unchanged.
- */
-
     if (_composite_mode == ICET_COMPOSITE_MODE_Z_BUFFER) {
         if (_depth_format == ICET_IMAGE_DEPTH_FLOAT) {
           /* Use Z buffer for active pixel testing. */
@@ -206,6 +184,8 @@
 #define CT_FULL_HEIGHT          FULL_HEIGHT
 #endif
 #include "compress_template_body.h"
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) {
                 const IceTFloat *_color;
                 IceTFloat *_out;
@@ -249,6 +229,8 @@
 #define CT_FULL_HEIGHT          FULL_HEIGHT
 #endif
 #include "compress_template_body.h"
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_RGB_FLOAT) {
                 const IceTFloat *_color;
                 IceTFloat *_out;
@@ -291,6 +273,8 @@
 #define CT_FULL_HEIGHT          FULL_HEIGHT
 #endif
 #include "compress_template_body.h"
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
             } else if (_color_format == ICET_IMAGE_COLOR_NONE) {
                 IceTFloat *_out;
 #ifdef REGION
@@ -324,6 +308,8 @@
 #define CT_FULL_HEIGHT          FULL_HEIGHT
 #endif
 #include "compress_template_body.h"
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
             } else {
                 icetRaiseError(ICET_SANITY_CHECK_FAIL,
                                "Encountered invalid color format 0x%X.",
@@ -383,6 +369,8 @@
 #define CT_FULL_HEIGHT          FULL_HEIGHT
 #endif
 #include "compress_template_body.h"
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
         } else if (_color_format == ICET_IMAGE_COLOR_RGBA_FLOAT) {
             const IceTFloat *_color;
             IceTFloat *_out;
@@ -424,6 +412,8 @@
 #define CT_FULL_HEIGHT          FULL_HEIGHT
 #endif
 #include "compress_template_body.h"
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
         } else if (_color_format == ICET_IMAGE_COLOR_RGB_FLOAT) {
             IceTUInt *_out;
             icetRaiseError(
@@ -456,8 +446,6 @@
 
 /* Undefine macros common to all non-layered cases. */
 #undef CT_RUN_LENGTH_SIZE
-#undef CT_TEST_PIXEL
-#undef CT_WRITE_PIXEL_IF_ACTIVE
     } else { /* Input image is layered. */
         const IceTSizeType _num_layers =
             icetLayeredImageGetHeaderConst(INPUT_IMAGE)->num_layers;
@@ -472,42 +460,17 @@
                 break;
             }
 
-/* Since the output image is non-layered, use the regular run length format. */
-#undef CT_ACTIVE_FRAGS
-#define CT_RUN_LENGTH_SIZE  RUN_LENGTH_SIZE
+/* The output image is non-layered, so use the regular run length format. */
+#define CT_RUN_LENGTH_SIZE RUN_LENGTH_SIZE
 
-/* A pixel is active if it contains at least one active fragment.  A fragment is
- * active if its depth is less than the background value of one.
+/* Since active fragments must be ordered before inactive ones, it is sufficient
+ * to check the first one.
  */
-#define CT_TEST_PIXEL(out)                                          \
-{                                                                   \
-    out = ICET_FALSE;                                               \
-                                                                    \
-    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
-        if (_depth[layer] < 1) {                                    \
-            out = ICET_TRUE;                                        \
-            break;                                                  \
-        }                                                           \
-    }                                                               \
-}
+#define CT_ACTIVE() (_depth[0] < 1.0)
 
-/* Perform the same check as `CT_TEST_PIXEL`, but copy the first active fragment
- * found to the output buffer.  Since the active fragments of a layered image
- * must be sorted front to back per pixel, the closest one is always found
- * first.
+/* Copy the front-most fragment, which must be stored first.
  */
-#define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)               \
-{                                                                   \
-    out_is_active = ICET_FALSE;                                     \
-                                                                    \
-    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {  \
-        if (_depth[layer] < 1) {                                    \
-            CTL_WRITE_FRAGMENT(layer, dest);                        \
-            out_is_active = ICET_TRUE;                              \
-            break;                                                  \
-        }                                                           \
-    }                                                               \
-}
+#define CT_WRITE_PIXEL(dest) CTL_WRITE_FRAGMENT(0, dest);
 
             /* Instantiate template for all possible fragment formats. */
             switch (_depth_format) {
@@ -558,8 +521,8 @@
 
 /* Undefine macros common to composite mode "z buffer". */
 #undef CT_RUN_LENGTH_SIZE
-#undef CT_TEST_PIXEL
-#undef CT_WRITE_PIXEL_IF_ACTIVE
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
             break; /* case ICET_COMPOSITE_MODE_Z_BUFFER */
 
         case ICET_COMPOSITE_MODE_BLEND:
@@ -578,56 +541,32 @@
 #define CT_ACTIVE_FRAGS     _active_frags
 #define CT_RUN_LENGTH_SIZE  RUN_LENGTH_SIZE_LAYERED
 
-/* A pixel is active if it contains at least one active fragment.  A fragment is
- * active if it is not completely transparent (i.e. alpha > 0).
+/* Active fragments must come first.
  */
-#define CT_TEST_PIXEL(out)                                                  \
-{                                                                           \
-    out = ICET_FALSE;                                                       \
-                                                                            \
-    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {          \
-        if (_color[layer*CTL_COLOR_CHANNELS + CTL_ALPHA_CHANNEL] != 0) {    \
-            out = ICET_TRUE;                                                \
-            break;                                                          \
-        }                                                                   \
-    }                                                                       \
-}
+#define CT_ACTIVE() (_color[CTL_ALPHA_CHANNEL] != 0)
 
-/* Perform the same check as `CT_TEST_PIXEL`, but copy all active fragments
- * found to the output buffer, preceded by the number of active fragments unless
- * the pixel is inactive.  Also add the number of active fragments to the
- * per-run total.
+/* Copy fragments until an inactive one is encountered.
  */
-#define CT_WRITE_PIXEL_IF_ACTIVE(dest, out_is_active)                       \
-{                                                                           \
-    /* Count active fragments. */                                           \
-    IceTLayerCount pixel_size = 0;                                          \
-                                                                            \
-    /* Leave room to store the number of active fragments and               \
-     * remember the location. */                                            \
-    IceTLayerCount *const pixel_size_out = (IceTLayerCount *)dest;          \
-    dest += sizeof(IceTLayerCount);                                         \
-                                                                            \
-    /* Check all fragments and copy the active ones. */                     \
-    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {          \
-        if (_color[layer*CTL_COLOR_CHANNELS + CTL_ALPHA_CHANNEL] != 0) {    \
-            CTL_WRITE_FRAGMENT(layer, dest);                                \
-            ++pixel_size;                                                   \
-        }                                                                   \
-    }                                                                       \
-                                                                            \
-    if (pixel_size == 0) {                                                  \
-        /* If the pixel is inactive, reclaim the space reserved to          \
-         * store the number of active fragments. */                         \
-        dest = (IceTByte *)pixel_size_out;                                  \
-        out_is_active = ICET_FALSE;                                         \
-    } else {                                                                \
-        /* Otherwise write the number of active fragments to the            \
-         * reserved location in the output buffer. */                       \
-        *pixel_size_out = pixel_size;                                       \
-        CT_ACTIVE_FRAGS += pixel_size;                                      \
-        out_is_active = ICET_TRUE;                                          \
-    }                                                                       \
+#define CT_WRITE_PIXEL(dest)                                                    \
+{                                                                               \
+    /* Count active fragments. */                                               \
+    IceTLayerCount pixel_size = 0;                                              \
+                                                                                \
+    /* Leave room to store the number of active fragments and                   \
+     * remember the location. */                                                \
+    IceTLayerCount *const pixel_size_out = (IceTLayerCount *)dest;              \
+    dest += sizeof(IceTLayerCount);                                             \
+                                                                                \
+    /* Copy active fragments, which must come first. */                         \
+    for (IceTLayerCount layer = 0; layer < _num_layers; ++layer) {              \
+        if (_color[layer*CTL_COLOR_CHANNELS + CTL_ALPHA_CHANNEL] == 0) break;   \
+        CTL_WRITE_FRAGMENT(layer, dest);                                        \
+        ++pixel_size;                                                           \
+    }                                                                           \
+                                                                                \
+    /* Write the number of active fragments to the reserved location. */        \
+    *pixel_size_out = pixel_size;                                               \
+    CT_ACTIVE_FRAGS += pixel_size;                                              \
 }
 
             /* Instantiate template for all possible fragment formats. */
@@ -681,8 +620,8 @@
 /* Undefine macros common to composite mode "blend". */
 #undef CT_ACTIVE_FRAGS
 #undef CT_RUN_LENGTH_SIZE
-#undef CT_TEST_PIXEL
-#undef CT_WRITE_PIXEL_IF_ACTIVE
+#undef CT_ACTIVE
+#undef CT_WRITE_PIXEL
             break; /* case ICET_COMPOSITE_MODE_BLEND */
         default:
             icetRaiseError(ICET_SANITY_CHECK_FAIL,
@@ -691,31 +630,21 @@
         } /* end switch (_composite_mode) */
     } /* end if (isLayered(INPUT_IMAGE)) */
 
-    {
-        /* Calculate the size of an uncompressed image with the same dimensions
-         * as the compression result, which may be different from those of
-         * input image. */
-        IceTSizeType uncompressed_size;
-
-        if (icetImageIsLayered(INPUT_IMAGE)) {
-            uncompressed_size = icetLayeredImageBufferSizeType(
-                _color_format,
-                _depth_format,
-                icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
-                icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE),
-                icetLayeredImageGetHeaderConst(INPUT_IMAGE)->num_layers);
-        } else {
-            uncompressed_size = icetImageBufferSizeType(
-                _color_format,
-                _depth_format,
-                icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
-                icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE));
-        }
-
-        icetRaiseDebug("Compression: %f%%\n",
-            100.0f - (  100.0f*icetSparseImageGetCompressedBufferSize(OUTPUT_SPARSE_IMAGE)
-                      / uncompressed_size ));
-    }
+    icetRaiseDebug("Compression: %f%%\n",
+        100.0f - (  100.0f*icetSparseImageGetCompressedBufferSize(OUTPUT_SPARSE_IMAGE)
+                  /(  icetImageIsLayered(INPUT_IMAGE)
+                    ? icetLayeredImageBufferSizeType(
+                        _color_format,
+                        _depth_format,
+                        icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
+                        icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE),
+                        icetLayeredImageGetHeaderConst(INPUT_IMAGE)->num_layers)
+                    : icetImageBufferSizeType(
+                                  _color_format,
+                                  _depth_format,
+                                  icetSparseImageGetWidth(OUTPUT_SPARSE_IMAGE),
+                                  icetSparseImageGetHeight(OUTPUT_SPARSE_IMAGE))
+                  ) ));
 }
 
 #undef INPUT_IMAGE
