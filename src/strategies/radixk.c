@@ -1364,8 +1364,8 @@ void icetRadixkCompose(const IceTInt *compose_group,
     if (use_interlace) {
         working_image = icetSparseImageInterlaceAlloc(
                                                working_image,
-                                 total_num_partitions,
-                                 RADIXK_SPLIT_OFFSET_ARRAY_BUFFER,
+                                               total_num_partitions,
+                                               RADIXK_SPLIT_OFFSET_ARRAY_BUFFER,
                                                RADIXK_INTERLACED_IMAGE_BUFFER);
     }
 
@@ -1397,8 +1397,8 @@ static IceTBoolean radixkTryPartitionLookup(IceTInt group_size)
 
     partition_assignments = malloc(group_size * sizeof(IceTInt));
     for (partition_index = 0;
-         partition_index < group_size;
-         partition_index++) {
+        partition_index < group_size;
+        partition_index++) {
         partition_assignments[partition_index] = -1;
     }
 

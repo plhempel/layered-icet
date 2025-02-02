@@ -542,7 +542,7 @@ IceTImage icetGetStatePointerLayeredImage(IceTEnum pname,
     buffer = icetGetStateBuffer(pname, buffer_size);
 
     return icetLayeredImagePointerAssignBuffer(
-        buffer, width, height, num_layers, color_buffer, depth_buffer);
+                buffer, width, height, num_layers, color_buffer, depth_buffer);
 }
 
 IceTImage icetImageAssignBuffer(IceTVoid *buffer,
@@ -689,8 +689,8 @@ IceTImage icetLayeredImagePointerAssignBuffer(IceTVoid *buffer,
 
     /* Check that there is depth information. */
     if (icetImageGetDepthFormat(image) == ICET_IMAGE_DEPTH_NONE) {
-            icetRaiseError(ICET_INVALID_VALUE,
-                           "Layered images must contain depth information.");
+        icetRaiseError(ICET_INVALID_VALUE,
+                       "Layered images must contain depth information.");
     }
     if (depth_buffer == NULL) {
         icetRaiseError(ICET_INVALID_VALUE, "Missing depth buffer.");
@@ -894,7 +894,7 @@ IceTBoolean icetSparseImageIsNull(const IceTSparseImage image)
 IceTBoolean icetSparseImageIsLayered(const IceTSparseImage image)
 {
     return  ICET_IMAGE_HEADER(image)[ICET_IMAGE_MAGIC_NUM_INDEX]
-        & ICET_IMAGE_FLAG_LAYERED;
+          & ICET_IMAGE_FLAG_LAYERED;
 }
 
 void icetImageAdjustForOutput(IceTImage image)
