@@ -71,6 +71,11 @@ SET(ICET_MAX_IMAGE_SPLIT ${initial_max_image_split} CACHE STRING
   "Sets the preferred number of times an image may be split.  Most image compositing algorithms prefer to partition the images such that each process gets a piece.  Too many partitions, though, and you could end up spending more time collecting them than you save balancing the compositing."
   )
 
+# Configure layered image format.
+SET(ICET_LAYER_COUNT_T IceTUnsignedInt8 CACHE STRING
+  "Data type used to store the number of active fragments at each pixel in a sparse layered image.  Use the smallest type sufficient for your data to decrease memory and network usage."
+  )
+
 # Configure MPE support
 IF (ICET_USE_MPI)
   OPTION(ICET_USE_MPE "Use MPE to trace MPI communications.  This is helpful for developers trying to measure the performance of parallel compositing algorithms." OFF)

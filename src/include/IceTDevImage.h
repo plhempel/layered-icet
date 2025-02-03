@@ -23,11 +23,6 @@ extern "C" {
 #define ICET_SRC_ON_TOP         ICET_TRUE
 #define ICET_DEST_ON_TOP        ICET_FALSE
 
-/* The number of fragments, each consisting of a color and depth value, at a
- * single pixel location in a layered image.
- */
-typedef IceTUnsignedInt8 IceTLayerCount;
-
 ICET_EXPORT IceTImage icetGetStateBufferImage(IceTEnum pname,
                                               IceTSizeType width,
                                               IceTSizeType height);

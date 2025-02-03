@@ -132,4 +132,9 @@ typedef IceTInt64 IceTPointerArithmetic;
 
 #cmakedefine ICET_USE_PARICOMPRESS
 
+/* The number of fragments, each consisting of a color and depth value, at a
+ * single pixel location in a layered image.
+ */
+typedef @ICET_LAYER_COUNT_T@ IceTLayerCount;
+
 #endif /*__IceTConfig_h*/
