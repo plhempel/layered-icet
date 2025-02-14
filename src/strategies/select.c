@@ -114,6 +114,25 @@ IceTBoolean icetStrategySupportsOrdering(IceTEnum strategy)
     }
 }
 
+IceTBoolean icetStrategySupportsLayeredImages(IceTEnum strategy)
+{
+    switch (strategy) {
+      case ICET_STRATEGY_DIRECT:        return ICET_FALSE;
+      case ICET_STRATEGY_SEQUENTIAL:    return ICET_TRUE;
+      case ICET_STRATEGY_SPLIT:         return ICET_FALSE;
+      case ICET_STRATEGY_REDUCE:        return ICET_FALSE;
+      case ICET_STRATEGY_VTREE:         return ICET_FALSE;
+      case ICET_STRATEGY_UNDEFINED:
+          icetRaiseError(ICET_INVALID_ENUM,
+                         "Strategy not defined. "
+                         "Use icetStrategy to set the strategy.");
+          return ICET_FALSE;
+      default:
+          icetRaiseError(ICET_INVALID_ENUM, "Invalid strategy %d.", strategy);
+          return ICET_FALSE;
+    }
+}
+
 IceTImage icetInvokeStrategy(IceTEnum strategy)
 {
     icetRaiseDebug("Invoking strategy %s",
@@ -169,6 +188,21 @@ const char *icetSingleImageStrategyNameFromEnum(IceTEnum strategy)
     }
 }
 
+IceTBoolean icetSingleImageStrategySupportsLayeredImages(IceTEnum strategy)
+{
+    switch(strategy) {
+      case ICET_SINGLE_IMAGE_STRATEGY_AUTOMATIC:
+      case ICET_SINGLE_IMAGE_STRATEGY_BSWAP:
+      case ICET_SINGLE_IMAGE_STRATEGY_BSWAP_FOLDING:
+      case ICET_SINGLE_IMAGE_STRATEGY_RADIXK:
+          return ICET_TRUE;
+      case ICET_SINGLE_IMAGE_STRATEGY_RADIXKR:
+      case ICET_SINGLE_IMAGE_STRATEGY_TREE:
+      default:
+          return ICET_FALSE;
+    }
+}
+
 void icetInvokeSingleImageStrategy(IceTEnum strategy,
                                    const IceTInt *compose_group,
                                    IceTInt group_size,
@@ -179,6 +213,16 @@ void icetInvokeSingleImageStrategy(IceTEnum strategy,
 {
     icetRaiseDebug("Invoking single image strategy %s",
                    icetSingleImageStrategyNameFromEnum(strategy));
+
+    /* When compositing a layered image, ensure that the selected strategy
+     * actually supports them. */
+    if (   icetSparseImageIsLayered(input_image)
+        && !icetSingleImageStrategySupportsLayeredImages(strategy)) {
+        icetRaiseError(ICET_INVALID_OPERATION,
+          "Single image strategy %s currently does not support layered images.",
+          icetSingleImageStrategyNameFromEnum(strategy));
+        return;
+    }
 
     switch(strategy) {
       case ICET_SINGLE_IMAGE_STRATEGY_AUTOMATIC:

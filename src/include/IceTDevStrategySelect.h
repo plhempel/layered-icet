@@ -30,12 +30,18 @@ ICET_STRATEGY_EXPORT const char *icetStrategyNameFromEnum(IceTEnum strategy);
 ICET_STRATEGY_EXPORT IceTBoolean icetStrategySupportsOrdering(
                                                              IceTEnum strategy);
 
+ICET_STRATEGY_EXPORT IceTBoolean icetStrategySupportsLayeredImages(
+                                                             IceTEnum strategy);
+
 ICET_STRATEGY_EXPORT IceTImage icetInvokeStrategy(IceTEnum strategy);
 
 ICET_STRATEGY_EXPORT IceTBoolean icetSingleImageStrategyValid(
                                                              IceTEnum strategy);
 
 ICET_STRATEGY_EXPORT const char *icetSingleImageStrategyNameFromEnum(
+                                                             IceTEnum strategy);
+
+ICET_STRATEGY_EXPORT IceTBoolean icetSingleImageStrategySupportsLayeredImages(
                                                              IceTEnum strategy);
 
 ICET_STRATEGY_EXPORT void icetInvokeSingleImageStrategy(

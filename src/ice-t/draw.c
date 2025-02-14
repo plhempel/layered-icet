@@ -927,6 +927,20 @@ IceTImage icetCompositeImageLayered(const IceTVoid *color_buffer,
         }
     }
 
+    /* Check whether the selected strategy supports layered images.  Single
+     * image strategies are checked in icetInvokeSingleImageStrategy. */
+    {
+        IceTEnum strategy;
+        icetGetEnumv(ICET_STRATEGY, &strategy);
+
+        if (!icetStrategySupportsLayeredImages(strategy)) {
+            icetRaiseError(ICET_INVALID_OPERATION,
+                       "Strategy %s currently does not support layered images.",
+                       icetStrategyNameFromEnum(strategy));
+            return icetImageNull();
+        }
+    }
+
     icetGetIntegerv(ICET_GLOBAL_VIEWPORT, global_viewport);
 
     icetStateSetBoolean(ICET_PRE_RENDERED, ICET_TRUE);
