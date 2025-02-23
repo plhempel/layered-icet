@@ -39,9 +39,11 @@ void icetStateResetTiming(void)
     icetStateSetDouble(ICET_COMPOSITE_TIME, 0.0);
     icetStateSetDouble(ICET_COLLECT_TIME, 0.0);
     icetStateSetDouble(ICET_TOTAL_DRAW_TIME, 0.0);
+    icetStateSetDouble(ICET_COMPOSITE_ROUND_TIME, 0.0);
 
     icetStateSetInteger(ICET_DRAW_TIME_ID, 0);
     icetStateSetInteger(ICET_SUBFUNC_TIME_ID, 0);
+    icetStateSetInteger(ICET_COMPOSITE_ROUND_TIME_ID, 0);
 
     icetStateSetInteger(ICET_BYTES_SENT, 0);
 }
@@ -112,7 +114,7 @@ static void icetTimingEnd(IceTEnum start_pname,
 
 void icetTimingRenderBegin(void)
 {
-    icetTimingBegin(ICET_SUBFUNC_TIME_ID,
+    icetTimingBegin(ICET_SUBFUNC_START_TIME,
                     ICET_SUBFUNC_TIME_ID,
                     ICET_RENDER_TIME,
                     "render");
