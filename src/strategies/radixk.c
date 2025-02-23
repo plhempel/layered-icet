@@ -30,6 +30,7 @@
 #include <IceTDevDiagnostics.h>
 #include <IceTDevImage.h>
 #include <IceTDevPorting.h>
+#include <IceTDevTiming.h>
 
 /* #define RADIXK_USE_TELESCOPE */
 
@@ -848,6 +849,7 @@ static void icetRadixkBasicCompose(const radixkInfo *info,
     remaining_partitions = total_num_partitions;
 
     for (current_round = 0; current_round < info->num_rounds; current_round++) {
+        icetTimingCompositeRoundBegin();
         const radixkRoundInfo *round_info = &info->rounds[current_round];
         radixkPartnerInfo *partners = radixkGetPartners(round_info,
                                                         compose_group,
@@ -882,6 +884,7 @@ static void icetRadixkBasicCompose(const radixkInfo *info,
             icetCommWait(&send_requests[0]);
         }
 
+        icetTimingCompositeRoundEnd();
         my_offset = partners[round_info->partition_index].offset;
         if (round_info->split) {
             remaining_partitions /= round_info->k;

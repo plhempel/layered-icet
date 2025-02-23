@@ -66,7 +66,7 @@
     IceTEnum _composite_mode;
 
 #ifdef TIME_DECOMPRESSION
-    icetTimingCompressBegin();
+    icetTimingDecompressBegin();
 #endif /* TIME_DECOMPRESSION */
 
     icetGetEnumv(ICET_COMPOSITE_MODE, &_composite_mode);
@@ -555,7 +555,7 @@
     } /* end if (isLayered(INPUT_SPARSE_IMAGE)) */
 
 #ifdef TIME_DECOMPRESSION
-    icetTimingCompressEnd();
+    icetTimingDecompressEnd();
 #endif
 }
 

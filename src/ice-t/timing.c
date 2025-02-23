@@ -78,6 +78,11 @@ static void icetTimingEnd(IceTEnum start_pname,
                           IceTEnum result_pname,
                           const char *name)
 {
+    IceTDouble start_time;
+    IceTDouble duration;
+    icetGetDoublev(start_pname, &start_time);
+    duration = icetWallTime() - start_time;
+
     icetRaiseDebug("Ending %s", name);
     (void)name;
 
@@ -97,18 +102,17 @@ static void icetTimingEnd(IceTEnum start_pname,
     icetStateSetInteger(id_pname, 0);
 
     {
-        IceTDouble start_time;
         IceTDouble old_time;
-        icetGetDoublev(start_pname, &start_time);
         icetGetDoublev(result_pname, &old_time);
-        icetStateSetDouble(result_pname,
-                           old_time + (icetWallTime() - start_time));
+        icetStateSetDouble(result_pname, old_time + duration);
+
+        printf("time: %s, %f, %f\n", name, duration, old_time + duration);
     }
 }
 
 void icetTimingRenderBegin(void)
 {
-    icetTimingBegin(ICET_SUBFUNC_START_TIME,
+    icetTimingBegin(ICET_SUBFUNC_TIME_ID,
                     ICET_SUBFUNC_TIME_ID,
                     ICET_RENDER_TIME,
                     "render");
@@ -166,6 +170,21 @@ void icetTimingCompressEnd(void)
                   "compress");
 }
 
+void icetTimingDecompressBegin(void)
+{
+    icetTimingBegin(ICET_SUBFUNC_START_TIME,
+                    ICET_SUBFUNC_TIME_ID,
+                    ICET_COMPRESS_TIME,
+                    "decompress");
+}
+void icetTimingDecompressEnd(void)
+{
+    icetTimingEnd(ICET_SUBFUNC_START_TIME,
+                  ICET_SUBFUNC_TIME_ID,
+                  ICET_COMPRESS_TIME,
+                  "decompress");
+}
+
 void icetTimingInterlaceBegin(void)
 {
     icetTimingBegin(ICET_SUBFUNC_START_TIME,
@@ -210,6 +229,22 @@ void icetTimingCollectEnd(void)
                   ICET_SUBFUNC_TIME_ID,
                   ICET_COLLECT_TIME,
                   "collect");
+}
+
+void icetTimingCompositeRoundBegin(void)
+{
+    icetTimingBegin(ICET_COMPOSITE_ROUND_START_TIME,
+                    ICET_COMPOSITE_ROUND_TIME_ID,
+                    ICET_COMPOSITE_ROUND_TIME,
+                    "composite round");
+}
+
+void icetTimingCompositeRoundEnd(void)
+{
+    icetTimingEnd(ICET_COMPOSITE_ROUND_START_TIME,
+                  ICET_COMPOSITE_ROUND_TIME_ID,
+                  ICET_COMPOSITE_ROUND_TIME,
+                  "composite round");
 }
 
 void icetTimingDrawFrameBegin(void)

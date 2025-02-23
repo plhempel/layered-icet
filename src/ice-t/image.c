@@ -3328,7 +3328,7 @@ void icetDecompressSubImage(const IceTSparseImage compressed_image,
 
 #define INPUT_SPARSE_IMAGE      compressed_image
 #define OUTPUT_IMAGE            image
-#define TIME_DECOMPRESSION
+#define TIME_DECOMPRESSION      1
 #define OFFSET                  offset
 #define PIXEL_COUNT             icetSparseImageGetNumPixels(compressed_image)
 #include "decompress_func_body.h"
@@ -3362,7 +3362,7 @@ void icetDecompressSubImageCorrectBackground(
 
 #define INPUT_SPARSE_IMAGE      compressed_image
 #define OUTPUT_IMAGE            image
-#define TIME_DECOMPRESSION
+#define TIME_DECOMPRESSION      1
 #define OFFSET                  offset
 #define PIXEL_COUNT             icetSparseImageGetNumPixels(compressed_image)
 #define CORRECT_BACKGROUND

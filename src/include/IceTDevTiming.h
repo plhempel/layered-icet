@@ -32,6 +32,9 @@ ICET_EXPORT void icetTimingBufferWriteEnd(void);
 ICET_EXPORT void icetTimingCompressBegin(void);
 ICET_EXPORT void icetTimingCompressEnd(void);
 
+ICET_EXPORT void icetTimingDecompressBegin(void);
+ICET_EXPORT void icetTimingDecompressEnd(void);
+
 ICET_EXPORT void icetTimingInterlaceBegin(void);
 ICET_EXPORT void icetTimingInterlaceEnd(void);
 
@@ -40,6 +43,9 @@ ICET_EXPORT void icetTimingBlendEnd(void);
 
 ICET_EXPORT void icetTimingCollectBegin(void);
 ICET_EXPORT void icetTimingCollectEnd(void);
+
+ICET_EXPORT void icetTimingCompositeRoundBegin(void);
+ICET_EXPORT void icetTimingCompositeRoundEnd(void);
 
 ICET_EXPORT void icetTimingDrawFrameBegin(void);
 ICET_EXPORT void icetTimingDrawFrameEnd(void);
