@@ -10,6 +10,26 @@
 **
 *****************************************************************************
 
+Layered IceT Publication:
+	Added the function icetCompositeImageLayered that operates on
+	pre-rendered layered images with multiple fragments per pixel.
+	This enables correct compositing of non-convexly partitioned direct
+	volume renders.
+
+	Added layered formats for IceTImage and IceTSparseImage.  Implemented
+	compression, decompression, pixel scanning and compressed-compressed
+	compositing of layered images.  Modified single-image strategies bswap,
+	bswap-folding and radix-k to support layered iamges.
+
+	Added the CMake cache variable ICET_LAYER_COUNT_T and typedef
+	IceTLayerCount to configure the datatype used to store the number of
+	fragments per pixel in a layered image.
+
+	Added *Alloc variants of some existing functions that create their own
+	output buffers rather than requiring the caller to do so.  Added function
+	icetCommProbe to determine the size of an incoming message without
+	receiving it (cf. MPI_Probe).
+
 Revision 2.2:
 	Added the icetCompositeImage function to allow IceT to operate on
 	pre-rendered images rather than rely on a rendering callback.
