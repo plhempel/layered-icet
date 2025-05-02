@@ -23,7 +23,7 @@ domain decompositions of volumetric data, while ensuring full backward-compatibi
 with the original IceT library. Please see our [publication](layered-icet-paper). 
 
 The original IceT library is available at 
-[https://gitlab.kitware.com/ice-t/ice-t](https://gitlab.kitware.com/ice-t/ice-t).
+[https://gitlab.kitware.com/icet/icet](https://gitlab.kitware.com/icet/icet).
 
 
 ## Build Instructions
