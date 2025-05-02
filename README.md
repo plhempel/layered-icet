@@ -1,6 +1,7 @@
 > *****************************************************************************
 >
-> README and installation instructions for IceT
+> README and installation instructions for Layered-IceT. This is a fork of IceT
+> and includes the copyright notice from the original IceT library below.
 >
 > Author: Kenneth Moreland (kmorel@sandia.gov)
 >
@@ -13,10 +14,16 @@
 >
 > *****************************************************************************
 
-# IceT
+# Layered-IceT
 
 The Image Composition Engine for Tiles (IceT) is a high-performance sort-last
-parallel rendering library.
+parallel rendering library. This fork of IceT extends the original library to support 
+parallel compositing of layered images, enabling parallel rendering of non-convex
+domain decompositions of volumetric data, while ensuring full backward-compatibility 
+with the original IceT library. Please see our [publication](layered-icet-paper). 
+
+The original IceT library is available at 
+[https://gitlab.kitware.com/ice-t/ice-t](https://gitlab.kitware.com/ice-t/ice-t).
 
 
 ## Build Instructions
@@ -79,6 +86,14 @@ but does not include empty fragments.
 For now, compositing of layered images is only supported by the *sequential*
 strategy with single image strategies *bswap*, *bswap-folding* and *radix-k*.
 
+
+## Citation
+If you use Layered-IceT in your work, please cite our paper:
+```
+Paul Hempel, Aryaman Gupta, Ivo F. Sbalzarini, and Stefan Gumhold: 
+"A Transparent and Efficient Extension of IceT for Parallel Compositing on Non-Convex Volume Domain Decompositions". 
+Eurographics Symposium on Parallel Graphics and Visualization (EGPGV), 2025. (in print)
+```
 
 ## License
 
