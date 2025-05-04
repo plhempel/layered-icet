@@ -20,9 +20,10 @@ The Image Composition Engine for Tiles (IceT) is a high-performance sort-last
 parallel rendering library. This fork of IceT extends the original library to support 
 parallel compositing of layered images, enabling parallel rendering of non-convex
 domain decompositions of volumetric data, while ensuring full backward-compatibility 
-with the original IceT library. Please see our [publication][layered-icet-paper]. 
+with the [original IceT library][upstream]. Please see our [publication][layered-icet-paper]. 
 
-The original IceT library is available at https://gitlab.kitware.com/icet/icet.
+Additional tools for testing and benchmarking can be found at
+https://github.com/plhempel/layered-icet-tools.
 
 
 ## Build Instructions
@@ -105,3 +106,4 @@ permissions before contributing.
 [cmake]: http://www.cmake.org/
 [cmake-download]: http://www.cmake.org/download/
 [layered-icet-paper]: tba
+[upstream]: https://gitlab.kitware.com/icet/icet
