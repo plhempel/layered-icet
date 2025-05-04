@@ -10,7 +10,7 @@
 > Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 > the U.S. Government retains certain rights in this software.
 >
-> This source code is released under the [New BSD License](bsd).
+> This source code is released under the [New BSD License][bsd].
 >
 > *****************************************************************************
 
@@ -20,18 +20,17 @@ The Image Composition Engine for Tiles (IceT) is a high-performance sort-last
 parallel rendering library. This fork of IceT extends the original library to support 
 parallel compositing of layered images, enabling parallel rendering of non-convex
 domain decompositions of volumetric data, while ensuring full backward-compatibility 
-with the original IceT library. Please see our [publication](layered-icet-paper). 
+with the original IceT library. Please see our [publication][layered-icet-paper]. 
 
-The original IceT library is available at 
-[https://gitlab.kitware.com/icet/icet](https://gitlab.kitware.com/icet/icet).
+The original IceT library is available at https://gitlab.kitware.com/icet/icet.
 
 
 ## Build Instructions
 
-Welcome to the IceT build process.  IceT uses [CMake](cmake) to automatically
+Welcome to the IceT build process.  IceT uses [CMake][cmake] to automatically
 tailor itself to your system, so compiling should be relatively painless.
 Before building IceT you will need to install CMake on your system.  You
-can get CMake from [here](cmake-download).
+can get CMake from [here][cmake-download].
 
 Once CMake is installed and the IceT source is extracted, run the
 interactive CMake configuration tool.  On UNIX, run `ccmake`.  On Win32, run
@@ -64,7 +63,7 @@ one fragment (i.e. color and depth) per pixel.  Layered images are useful for
 applications that require ordered compositing, but cannot guarantee a total
 visibility ordering of all processes.  One such use case is direct volume
 rendering of non-convex domain decompositions.  For more information, see our
-[publication](layered-icet-paper).
+[publication][layered-icet-paper].
 
 Currently, layered compositing is only implemented for pre-rendered images
 via the function `icetCompositeImageLayered`.  Compared to
@@ -97,7 +96,7 @@ Eurographics Symposium on Parallel Graphics and Visualization (EGPGV), 2025. (in
 
 ## License
 
-IceT is released under the [New BSD License](bsd), see Copyright.txt.
+IceT is released under the [New BSD License][bsd], see Copyright.txt.
 Any contributions to IceT will also be considered to fall under this license,
 and it is the responsibility of the authors to secure the necessary
 permissions before contributing.
