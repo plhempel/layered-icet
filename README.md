@@ -105,5 +105,5 @@ permissions before contributing.
 [bsd]: http://opensource.org/licenses/BSD-3-Clause
 [cmake]: http://www.cmake.org/
 [cmake-download]: http://www.cmake.org/download/
-[layered-icet-paper]: tba
+[layered-icet-paper]: https://diglib.eg.org/handle/10.2312/pgv20251151
 [upstream]: https://gitlab.kitware.com/icet/icet
