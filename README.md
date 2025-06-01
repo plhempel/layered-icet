@@ -59,23 +59,56 @@ cmake --install build -j $(($(nproc) * 2))
 
 ## Compositing Layered Images
 
-This fork of IceT has been extended to support layered images with more than
-one fragment (i.e. color and depth) per pixel.  Layered images are useful for
+In traditional parallel rendering (as in the original IceT), each pixel in an 
+image contains a single fragment: a color and, optionally, a depth value 
+representing the nearest visible surface or the alpha-composited result along
+the viewing ray. This works well when the domains held by the rendering processes
+can be globally sorted by depth (i.e., convex decompositions).
+
+Layered compositing extends this idea by allowing each pixel to hold multiple 
+fragments (“layers”), each representing a different volume subdomain or other 
+partially transparent object along the ray. This is crucial for
 applications that require ordered compositing, but cannot guarantee a total
-visibility ordering of all processes.  One such use case is direct volume
+visibility ordering of all processes. One such use case is direct volume
 rendering of non-convex domain decompositions.  For more information, see our
 [publication][layered-icet-paper].
 
-Currently, layered compositing is only implemented for pre-rendered images
-via the function `icetCompositeImageLayered`.  Compared to
-`icetCompositeImage`, it requires an extra argument specifying the number of
-fragments per pixel.  That number must be the same for all pixels in the
-image, but may differ between processes.  Color and depth values must be
-stored contiguously per pixel, ordered front to back.  Empty fragments with
-an alpha value of zero must be ordered after any active fragments at that
-pixel.  The individually sorted pixels are then given in the same scanline
+Layered-IceT supports parallel compositing of layered images produced by an 
+external rendering application via the `icetCompositeImageLayered` function:
+
+```c
+IceTImage icetCompositeImageLayered(const IceTVoid *color_buffer,
+                                    const IceTVoid *depth_buffer,
+                                    IceTInt num_layers,
+                                    const IceTInt *valid_pixels_viewport,
+                                    const IceTDouble *projection_matrix,
+                                    const IceTDouble *modelview_matrix,
+                                    const IceTFloat *background_color)
+```
+
+The `color_buffer` and `depth_buffer` parameters contain the linearized color and
+depth layered buffers for the current process. Fragments within a pixel must be 
+stored contiguously in the linearized buffers. Non-empty fragments must be ordered
+front to back, and placed before any empty fragments. Layered-IceT internally 
+compresses the empty fragments within pixels for efficiency.
+
+The individually sorted pixels are then given in the same scanline
 order as for regular flat images.  Layered images must always contain depth
 information.
+
+The `num_layers` parameter specifies the number of fragments per pixel, which
+must be the same for all pixels in the image. If a pixel produces fewer fragments,
+the remaining fragments must be filled with empty values (i.e., zero alpha). The 
+`num_layers` parameter may differ between processes.
+
+The parameters `valid_pixels_viewport`, `projection_matrix`, `modelview_matrix` and
+`background_color` are the same as for the original `icetCompositeImage` function.
+
+The following diagram illustrates correct usage of the `icetCompositeImageLayered`
+function with an example and highlights a few pitfalls to avoid:
+![Diagram using a example to illustrate correct usage of `iceTCompositeImageLayered`,
+highlighting correct ordering of empty and non-empty fragments and expected 
+linearization order](API_usage_guide.svg)
 
 To reduce network usage, the number of active fragments per pixel is stored
 as an unsigned byte.  If you need more than 255 layers, you can change this
@@ -83,9 +116,28 @@ type through the CMake cache variable `ICET_LAYER_COUNT_T`.  Note that this
 limit applies to the total number of fragments summed across all processes,
 but does not include empty fragments.
 
-For now, compositing of layered images is only supported by the *sequential*
-strategy with single image strategies *bswap*, *bswap-folding* and *radix-k*.
+Before the call to `icetCompositeImageLayered`, IceT must be configured correctly.
+Compositing of layered images is currently only supported with the *sequential*
+strategy,
 
+```c
+icetStrategy(ICET_STRATEGY_SEQUENTIAL);
+```
+
+and with the following single-image strategies: *bswap*, *bswap-folding* and *radix-k*.
+For example, you can set the single-image strategy to *radix-k* with:
+
+```c
+icetSingleImageStrategy(ICET_SINGLE_IMAGE_STRATEGY_RADIXK);
+```
+
+Unlike 
+Parallel compositing of layered images does not require a call to the `icetCompositeOrder` 
+function. However, it always requires a depth buffer, so a valid depth format must be set:
+
+```c
+icetSetDepthFormat(ICET_IMAGE_DEPTH_FLOAT);
+```
 
 ## Citation
 If you use Layered-IceT in your work, please cite our paper:
