@@ -131,7 +131,6 @@ For example, you can set the single-image strategy to *radix-k* with:
 icetSingleImageStrategy(ICET_SINGLE_IMAGE_STRATEGY_RADIXK);
 ```
 
-Unlike 
 Parallel compositing of layered images does not require a call to the `icetCompositeOrder` 
 function. However, it always requires a depth buffer, so a valid depth format must be set:
 
