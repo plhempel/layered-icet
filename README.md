@@ -141,9 +141,17 @@ icetSetDepthFormat(ICET_IMAGE_DEPTH_FLOAT);
 ## Citation
 If you use Layered-IceT in your work, please cite our paper:
 ```
-Paul Hempel, Aryaman Gupta, Ivo F. Sbalzarini, and Stefan Gumhold: 
-"A Transparent and Efficient Extension of IceT for Parallel Compositing on Non-Convex Volume Domain Decompositions". 
-Eurographics Symposium on Parallel Graphics and Visualization (EGPGV), 2025. (in print)
+@inproceedings{10.2312:pgv.20251151,
+booktitle = {Eurographics Symposium on Parallel Graphics and Visualization},
+editor = {Reina, Guido and Rizzi, Silvio and Gueunet, Charles},
+title = {{A Transparent and Efficient Extension of IceT for Parallel Compositing on Non-Convex Volume Domain Decompositions}},
+author = {Hempel, Paul and Gupta, Aryaman and Sbalzarini, Ivo F. and Gumhold, Stefan},
+year = {2025},
+publisher = {The Eurographics Association},
+ISSN = {1727-348X},
+ISBN = {978-3-03868-274-5},
+DOI = {10.2312/pgv.20251151}
+}
 ```
 
 ## License
