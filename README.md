@@ -90,11 +90,8 @@ The `color_buffer` and `depth_buffer` parameters contain the linearized color an
 depth layered buffers for the current process. Fragments within a pixel must be 
 stored contiguously in the linearized buffers. Non-empty fragments must be ordered
 front to back, and placed before any empty fragments. Layered-IceT internally 
-compresses the empty fragments within pixels for efficiency.
-
-The individually sorted pixels are then given in the same scanline
-order as for regular flat images.  Layered images must always contain depth
-information.
+compresses the empty fragments within pixels for efficiency. Layered images must
+always contain depth information.
 
 The `num_layers` parameter specifies the number of fragments per pixel, which
 must be the same for all pixels in the image. If a pixel produces fewer fragments,
